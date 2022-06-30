@@ -61,7 +61,8 @@ extern "C" {
 #define USB_CMD_LENGTH      35
 #define USB_ARG1_LENGTH     35
 #define USB_ARG2_LENGTH     35
-
+#define USB_ARG3_LENGTH     129
+#define USB_ARG4_LENGTH     35
 
 /* USER CODE END EM */
 

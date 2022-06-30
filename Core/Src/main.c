@@ -96,9 +96,11 @@ void LiveLedOn(void);
 /*** Tools ***/
 void UpTimeTask(void);
 uint8_t SpaceCount(char *str);
+uint8_t StringArrayToBytes(char *str, uint8_t *data, uint8_t bsize);
 
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
+HAL_StatusTypeDef FlashProgram(uint32_t address, uint8_t *data, uint8_t size);
 
 /* USER CODE END PFP */
 
@@ -440,10 +442,14 @@ void UsbParser(char *request)
   char cmd[USB_CMD_LENGTH];
   char arg1[USB_ARG1_LENGTH];
   char arg2[USB_ARG2_LENGTH];
+  char arg3[USB_ARG3_LENGTH];
+  char arg4[USB_ARG4_LENGTH];
 
   memset(cmd,0x00, sizeof(cmd));
   memset(arg1,0x00, sizeof(arg1));
   memset(arg2,0x00, sizeof(arg2));
+  memset(arg3,0x00, sizeof(arg3));
+  memset(arg4,0x00, sizeof(arg4));
 
   if(strlen(USB_UART_RxBuffer) !=0)
   {
@@ -498,17 +504,29 @@ void UsbParser(char *request)
 
     if(spaces == 4)
     {
-      uint32_t addr;
-      uint8_t size;
-      char data[129];
-      uint16_t crc;
-      memset(data, 0, sizeof(data));
-      //cmd addr size data crc
-      sscanf(request, "%s %lx %hhx %s %hx", cmd, &addr, &size, data, &crc );
-
       if(!strcmp(cmd, "PG"))
       {
-        strcpy(USB_UART_TxBuffer, "OK");
+        uint8_t data[256];
+        memset(data, 0, sizeof(data));
+
+                                         //cmd addr  size  data  crc
+        sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4);
+        uint8_t size = strtol(arg2, NULL, 16);
+
+        if(strlen(arg3)*2 != size)
+          strcpy(USB_UART_TxBuffer, "!SIZE");
+        else
+        {
+          for(uint8_t i = 0; i<size; i+=2)
+          {
+
+
+          }
+
+           strcpy(USB_UART_TxBuffer, "OK");
+        }
+
+
       }
       else
       {
@@ -520,7 +538,6 @@ void UsbParser(char *request)
 }
 
 /* Tools----------------------------------------------------------------------*/
-
 uint8_t SpaceCount(char *str)
 {
   uint8_t space = 0;
@@ -532,6 +549,27 @@ uint8_t SpaceCount(char *str)
   return space;
 }
 
+uint8_t StringArrayToBytes(char *str, uint8_t *data, uint8_t bsize)
+{
+  if(strlen(str)/2 == bsize)
+  {
+    memset(data, 0, bsize);
+    uint8_t byteIndex = 0;
+    for(uint8_t i = 0; i < bsize*2; i+=2)
+    {
+      char sb[2] = {0,0};
+      sb[0] = str[i];
+      sb[1] = str[i+1];
+      data[byteIndex++] = strtol(sb, NULL, 16);
+    }
+    return bsize;
+  }
+  else
+  {
+    return 0;
+  }
+}
+
 void UpTimeTask(void)
 {
   static uint32_t timestamp;
@@ -541,6 +579,9 @@ void UpTimeTask(void)
     Device.UpTimeSec++;
   }
 }
+
+
+
 
 /* LEDs ---------------------------------------------------------------------*/
 void LiveLedOn(void)
@@ -576,10 +617,16 @@ uint32_t FlashSectorErase(uint8_t start, uint8_t number)
   return sectorError;
 }
 
-uint32_t FlashProgram()
+HAL_StatusTypeDef FlashProgram(uint32_t address, uint8_t *data, uint8_t size)
 {
-
-  return 0;
+  HAL_StatusTypeDef status = HAL_OK;
+  for(uint8_t i = 0; i< size; i++ )
+  {
+    //status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, address + i, data[i]);
+    if(status != HAL_OK)
+      return status;
+  }
+  return HAL_OK;
 }
 
 
