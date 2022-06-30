@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -95,6 +96,9 @@ void LiveLedOn(void);
 /*** Tools ***/
 void UpTimeTask(void);
 uint8_t SpaceCount(char *str);
+
+/*** Flash ***/
+uint32_t FlashSectorErase(uint8_t start, uint8_t number);
 
 /* USER CODE END PFP */
 
@@ -424,9 +428,8 @@ void UsbTxTask(void)
   uint8_t len = strlen(USB_UART_TxBuffer);
   if(len != 0)
   {
-    strcat(USB_UART_TxBuffer,"\n");
     Device.Diag.UsbUartResponseCnt++;
-    HAL_UART_Transmit(&husb, (uint8_t*) USB_UART_TxBuffer, len + 1, 100);
+    HAL_UART_Transmit(&husb, (uint8_t*) USB_UART_TxBuffer, len, 100);
     USB_UART_TxBuffer[0] = 0;
   }
 }
@@ -435,7 +438,13 @@ void UsbParser(char *request)
 {
   uint8_t spaces = 0;
   char cmd[USB_CMD_LENGTH];
-  memset(cmd, 0, sizeof(cmd));
+  char arg1[USB_ARG1_LENGTH];
+  char arg2[USB_ARG2_LENGTH];
+
+  memset(cmd,0x00, sizeof(cmd));
+  memset(arg1,0x00, sizeof(arg1));
+  memset(arg2,0x00, sizeof(arg2));
+
   if(strlen(USB_UART_RxBuffer) !=0)
   {
     memset(USB_UART_TxBuffer, 0x00, sizeof(USB_UART_TxBuffer));
@@ -473,6 +482,20 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
+
+    if(spaces == 2)
+    {
+      sscanf(request, "%s %s %s", cmd, arg1, arg2);
+      if(!strcmp(cmd, "SER"))
+      {
+        sprintf(USB_UART_TxBuffer,"%08lX", FlashSectorErase(strtol(arg1, NULL, 16), strtol(arg2, NULL, 16)));
+      }
+      else
+      {
+        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
+      }
+    }
+
     if(spaces == 4)
     {
       uint32_t addr;
@@ -483,7 +506,7 @@ void UsbParser(char *request)
       //cmd addr size data crc
       sscanf(request, "%s %lx %hhx %s %hx", cmd, &addr, &size, data, &crc );
 
-      if(!strcmp(cmd, "WR"))
+      if(!strcmp(cmd, "PG"))
       {
         strcpy(USB_UART_TxBuffer, "OK");
       }
@@ -492,6 +515,7 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
+    strcat(USB_UART_TxBuffer,"\n");
   }
 }
 
@@ -529,12 +553,35 @@ void LiveLedOff(void)
   HAL_GPIO_WritePin(LIVE_LED_GPIO_Port, LIVE_LED_Pin, GPIO_PIN_RESET);
 }
 
-/* printf -------------------------------------------------------------------*/
+/* printf --------------------------------------------------------------------*/
 int _write(int file, char *ptr, int len)
 {
  // HAL_UART_Transmit(&huart3, (uint8_t*)ptr, len, 100);
   return len;
 }
+
+
+/* Flash ---------------------------------------------------------------------*/
+uint32_t FlashSectorErase(uint8_t start, uint8_t number)
+{
+
+  uint32_t sectorError = 0xFFFFFFFF;
+  /*FLASH_EraseInitTypeDef hEraseInit;
+  hEraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
+  hEraseInit.Sector = start;
+  hEraseInit.NbSectors = number;
+  hEraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
+  HAL_FLASHEx_Erase(&hEraseInit, &sectorError);
+  */
+  return sectorError;
+}
+
+uint32_t FlashProgram()
+{
+
+  return 0;
+}
+
 
 /* USER CODE END 4 */
 
