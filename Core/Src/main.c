@@ -33,6 +33,7 @@ typedef struct _AppTypeDef
   struct _Diag
   {
     uint32_t UsbUartErrorCnt;
+    uint32_t UsbUartResponseCnt;
   }Diag;
 /*
   char FW[DEVICE_FW_SIZE];
@@ -85,10 +86,16 @@ static void MX_ADC3_Init(void);
 /*** Usb ***/
 void UsbParser(char *request);
 void UsbRxTask(void);
+void UsbTxTask(void);
 
 /*** LiveLED ***/
 void LiveLedOff(void);
 void LiveLedOn(void);
+
+/*** Tools ***/
+void UpTimeTask(void);
+uint8_t SpaceCount(char *str);
+
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -149,7 +156,10 @@ int main(void)
   while (1)
   {
     LiveLedTask(&hLiveLed);
+    UpTimeTask();
+
     UsbRxTask();
+    UsbTxTask();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -386,6 +396,7 @@ void UsbRxTask(void)
         UsbParser(USB_UART_RxBuffer);
         memset(USB_UART_RxBuffer, 0x00, sizeof(USB_UART_RxBuffer));
         HAL_UART_Receive_DMA(&huart3, (uint8_t*) USB_UART_RxBuffer, sizeof(USB_UART_RxBuffer));
+        break;
       }
     }
     if(startFlag)
@@ -402,30 +413,37 @@ void UsbRxTask(void)
         startFlag = 0;
         HAL_UART_DMAStop(&husb);
         memset(USB_UART_RxBuffer, 0x00, sizeof(USB_UART_RxBuffer));
-        HAL_UART_Receive_DMA(&huart3, (uint8_t*) USB_UART_RxBuffer, sizeof(USB_UART_RxBuffer));
+        HAL_UART_Receive_DMA(&husb, (uint8_t*) USB_UART_RxBuffer, sizeof(USB_UART_RxBuffer));
         Device.Diag.UsbUartErrorCnt ++;
       }
     }
   }
 }
-void UsbUartTx(char *str)
+void UsbTxTask(void)
 {
-  strcat(str, "\n");
-  HAL_UART_Transmit(&husb, (uint8_t*)str, strlen(str), 100);
+  uint8_t len = strlen(USB_UART_TxBuffer);
+  if(len != 0)
+  {
+    strcat(USB_UART_TxBuffer,"\n");
+    Device.Diag.UsbUartResponseCnt++;
+    HAL_UART_Transmit(&husb, (uint8_t*) USB_UART_TxBuffer, len + 1, 100);
+    USB_UART_TxBuffer[0] = 0;
+  }
 }
 
 void UsbParser(char *request)
 {
+  uint8_t spaces = 0;
   char cmd[USB_CMD_LENGTH];
-  char arg1[USB_ARG1_LENGTH];
-  char arg2[USB_ARG2_LENGTH];
-  uint8_t params = 0;
+  memset(cmd, 0, sizeof(cmd));
   if(strlen(USB_UART_RxBuffer) !=0)
   {
-    memset(USB_UART_TxBuffer, 0x00, USB_BUFFER_SIZE);
-    params = sscanf(request, "%s %s %s", cmd, arg1, arg2);
-    if(params == 1)
-    {/*** parameterless commands ***/
+    memset(USB_UART_TxBuffer, 0x00, sizeof(USB_UART_TxBuffer));
+    spaces = SpaceCount(USB_UART_RxBuffer);
+    if(spaces == 0)
+    {
+      sscanf(request, "%s", cmd);
+      /*** parameterless commands ***/
       if(!strcmp(cmd, "*OPC?"))
       {
         strcpy(USB_UART_TxBuffer, "*OPC");
@@ -455,19 +473,50 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
+    if(spaces == 4)
+    {
+      uint32_t addr;
+      uint8_t size;
+      char data[129];
+      uint16_t crc;
+      memset(data, 0, sizeof(data));
+      //cmd addr size data crc
+      sscanf(request, "%s %lx %hhx %s %hx", cmd, &addr, &size, data, &crc );
 
-    if(params == 2)
-    {/*** commands with parameters ***/
+      if(!strcmp(cmd, "WR"))
+      {
+        strcpy(USB_UART_TxBuffer, "OK");
+      }
+      else
       {
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
-
-
-    UsbUartTx(USB_UART_TxBuffer);
   }
 }
 
+/* Tools----------------------------------------------------------------------*/
+
+uint8_t SpaceCount(char *str)
+{
+  uint8_t space = 0;
+  for(uint32_t i = 0; i < strlen(str); i++)
+  {
+    if(str[i]==' ')
+      space++;
+  }
+  return space;
+}
+
+void UpTimeTask(void)
+{
+  static uint32_t timestamp;
+  if(HAL_GetTick() - timestamp > 1000)
+  {
+    timestamp = HAL_GetTick();
+    Device.UpTimeSec++;
+  }
+}
 
 /* LEDs ---------------------------------------------------------------------*/
 void LiveLedOn(void)
