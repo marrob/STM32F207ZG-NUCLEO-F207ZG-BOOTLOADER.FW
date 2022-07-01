@@ -102,7 +102,7 @@ uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size);
 
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
-HAL_StatusTypeDef FlashProgram(uint32_t address, uint8_t *data, uint8_t size);
+uint32_t FlashProgram(uint32_t address, uint8_t *data, uint8_t size);
 
 /* USER CODE END PFP */
 
@@ -487,6 +487,36 @@ void UsbParser(char *request)
       {
         sprintf(USB_UART_TxBuffer, "%lld", Device.UpTimeSec);
       }
+      else if(!strcmp(cmd, "FL")) //Flash Lock
+      {
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
+
+        if(HAL_FLASH_Lock() != HAL_OK)
+          sprintf(USB_UART_TxBuffer, "!LOCK ERROR");
+        else
+          sprintf(USB_UART_TxBuffer, "OK");
+
+      }
+      else if(!strcmp(cmd, "FU")) //Flash Unlock
+      {
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
+
+        if(HAL_FLASH_Unlock() != HAL_OK)
+          sprintf(USB_UART_TxBuffer, "!UNLOCK ERROR");
+        else
+          sprintf(USB_UART_TxBuffer, "OK");
+
+      }
       else
       {
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
@@ -537,8 +567,11 @@ void UsbParser(char *request)
             strcpy(USB_UART_TxBuffer, "!CRC ERROR");
           else
           {
-            FlashProgram(addr, data, bsize);
-            strcpy(USB_UART_TxBuffer, "OK");
+            uint32_t status = FlashProgram(addr, data, bsize);
+            if(status != HAL_FLASH_ERROR_NONE)
+              sprintf(USB_UART_TxBuffer, "%s %08lX", "!PROGRAM ERROR", status);
+            else
+              strcpy(USB_UART_TxBuffer, "OK");
           }
         }
       }
@@ -637,28 +670,26 @@ int _write(int file, char *ptr, int len)
 /* Flash ---------------------------------------------------------------------*/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number)
 {
-
-  uint32_t sectorError = 0xFFFFFFFF;
-  /*FLASH_EraseInitTypeDef hEraseInit;
+  uint32_t sectorError = 0x0;
+  FLASH_EraseInitTypeDef hEraseInit;
   hEraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
   hEraseInit.Sector = start;
   hEraseInit.NbSectors = number;
   hEraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
   HAL_FLASHEx_Erase(&hEraseInit, &sectorError);
-  */
   return sectorError;
 }
 
-HAL_StatusTypeDef FlashProgram(uint32_t address, uint8_t *data, uint8_t size)
+uint32_t FlashProgram(uint32_t address, uint8_t *data, uint8_t size)
 {
   HAL_StatusTypeDef status = HAL_OK;
   for(uint8_t i = 0; i< size; i++ )
   {
-    //status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, address + i, data[i]);
+    status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, address + i, data[i]);
     if(status != HAL_OK)
-      return status;
+      return HAL_FLASH_GetError();
   }
-  return HAL_OK;
+  return HAL_FLASH_ERROR_NONE;
 }
 
 
