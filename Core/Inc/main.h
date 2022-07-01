@@ -57,11 +57,11 @@ extern "C" {
 #define DEVICE_MNF            "KONVOLUCIO"
 #define DEVICE_MNF_SIZE       sizeof(DEVICE_MNF)
 
-#define USB_BUFFER_SIZE     300
+#define USB_BUFFER_SIZE     700
 #define USB_CMD_LENGTH      35
 #define USB_ARG1_LENGTH     35
 #define USB_ARG2_LENGTH     35
-#define USB_ARG3_LENGTH     129
+#define USB_ARG3_LENGTH     513
 #define USB_ARG4_LENGTH     35
 
 /* USER CODE END EM */

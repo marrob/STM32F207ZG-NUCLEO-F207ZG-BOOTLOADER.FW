@@ -1,9 +1,18 @@
 
 Flash Program
-cmd addr size data crc                                                                                                                            crc
-PG 00000000 00 000000000 0000
+FP 00000000 000 000000000 0000 //cmd addr size data crc
+size: 001 - 100
+Response:
+- OK
+- !SIZE ERROR
+- !CRC ERROR
 ---
-
 Flash Sector Erase
-SR  Start Num
-SER 0 0
+FE Start Num
+FE 0 0
+---
+Flash Read Memory
+FR 00000000 000 //cmd addr size
+Response:
+00000000 000 000000000 0000 // addr size data crc
+size: 001 - 100

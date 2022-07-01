@@ -96,7 +96,9 @@ void LiveLedOn(void);
 /*** Tools ***/
 void UpTimeTask(void);
 uint8_t SpaceCount(char *str);
-uint8_t StringArrayToBytes(char *str, uint8_t *data, uint8_t bsize);
+void StringArrayToBytes(char *str, uint8_t *data, uint16_t bsize);
+void BytesToHexaString(uint8_t *data, char *dest, uint16_t bsize);
+uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size);
 
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
@@ -427,7 +429,7 @@ void UsbRxTask(void)
 }
 void UsbTxTask(void)
 {
-  uint8_t len = strlen(USB_UART_TxBuffer);
+  uint16_t len = strlen(USB_UART_TxBuffer);
   if(len != 0)
   {
     Device.Diag.UsbUartResponseCnt++;
@@ -444,12 +446,14 @@ void UsbParser(char *request)
   char arg2[USB_ARG2_LENGTH];
   char arg3[USB_ARG3_LENGTH];
   char arg4[USB_ARG4_LENGTH];
+  uint8_t data[256];
 
   memset(cmd,0x00, sizeof(cmd));
   memset(arg1,0x00, sizeof(arg1));
   memset(arg2,0x00, sizeof(arg2));
   memset(arg3,0x00, sizeof(arg3));
   memset(arg4,0x00, sizeof(arg4));
+  memset(data, 0, sizeof(data));
 
   if(strlen(USB_UART_RxBuffer) !=0)
   {
@@ -492,9 +496,22 @@ void UsbParser(char *request)
     if(spaces == 2)
     {
       sscanf(request, "%s %s %s", cmd, arg1, arg2);
-      if(!strcmp(cmd, "SER"))
+      if(!strcmp(cmd, "FE")) //cmd start num
       {
         sprintf(USB_UART_TxBuffer,"%08lX", FlashSectorErase(strtol(arg1, NULL, 16), strtol(arg2, NULL, 16)));
+      }
+      else if(!strcmp(cmd, "FR")) //cmd addr size
+      {
+        uint32_t address = strtol(arg1, NULL, 16);
+        uint16_t bsize = strtol(arg2, NULL, 16);
+        if(bsize > 256)
+          strcpy(USB_UART_TxBuffer, "!SIZE_ERROR");
+        for(uint16_t i = 0; i < bsize; i++)
+          data[i] = *(__IO uint8_t*)(address + i);
+        uint16_t crc = CalcCrc16Ansi(0, data, bsize);
+        memset(arg3, 0, sizeof(arg3));
+        BytesToHexaString(data, arg3, bsize);
+        sprintf(USB_UART_TxBuffer,"%08lX %02X %s %04X", address, bsize, arg3, crc ); //addr size data crc
       }
       else
       {
@@ -504,29 +521,26 @@ void UsbParser(char *request)
 
     if(spaces == 4)
     {
-      if(!strcmp(cmd, "PG"))
+      sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
+      if(!strcmp(cmd, "FP"))
       {
-        uint8_t data[256];
-        memset(data, 0, sizeof(data));
-
-                                         //cmd addr  size  data  crc
-        sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4);
-        uint8_t size = strtol(arg2, NULL, 16);
-
-        if(strlen(arg3)*2 != size)
-          strcpy(USB_UART_TxBuffer, "!SIZE");
+        uint32_t addr = strtol(arg1, NULL, 16);
+        uint16_t bsize = strtol(arg2, NULL, 16);
+        uint16_t crc = strtol(arg4, NULL, 16);
+        if(strlen(arg3) != bsize * 2) //e.g: 010203 -> bsize = 3
+          strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
         else
         {
-          for(uint8_t i = 0; i<size; i+=2)
+          StringArrayToBytes(arg3, data, bsize);
+          uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
+          if(crc != clacCrc)
+            strcpy(USB_UART_TxBuffer, "!CRC ERROR");
+          else
           {
-
-
+            FlashProgram(addr, data, bsize);
+            strcpy(USB_UART_TxBuffer, "OK");
           }
-
-           strcpy(USB_UART_TxBuffer, "OK");
         }
-
-
       }
       else
       {
@@ -549,25 +563,26 @@ uint8_t SpaceCount(char *str)
   return space;
 }
 
-uint8_t StringArrayToBytes(char *str, uint8_t *data, uint8_t bsize)
+void StringArrayToBytes(char *str, uint8_t *data, uint16_t bsize)
 {
-  if(strlen(str)/2 == bsize)
+  memset(data, 0, bsize);
+  uint8_t byteIndex = 0;
+  for(uint16_t i = 0; i < bsize*2; i+=2)
   {
-    memset(data, 0, bsize);
-    uint8_t byteIndex = 0;
-    for(uint8_t i = 0; i < bsize*2; i+=2)
-    {
-      char sb[2] = {0,0};
-      sb[0] = str[i];
-      sb[1] = str[i+1];
-      data[byteIndex++] = strtol(sb, NULL, 16);
-    }
-    return bsize;
+    char sb[2] = {0,0};
+    sb[0] = str[i];
+    sb[1] = str[i+1];
+    data[byteIndex++] = strtol(sb, NULL, 16);
   }
+}
+
+void BytesToHexaString(uint8_t *data, char *dest, uint16_t bsize)
+{
+  if(bsize)
+    for(uint16_t i = 0; i < bsize; i++)
+        sprintf((dest + (i * 2)),"%02X", *(data + i));
   else
-  {
-    return 0;
-  }
+    dest[0] = 0;
 }
 
 void UpTimeTask(void)
@@ -580,8 +595,25 @@ void UpTimeTask(void)
   }
 }
 
+uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size)
+{
+  uint16_t remainder = initValue;
+  uint16_t polynomial = 0x8005;
+  uint8_t *_address = (uint8_t*)address;
 
-
+  for (size_t i = 0; i < size; ++i)
+  {
+    remainder ^= (_address[i] << 8);
+    for (uint8_t bit = 8; bit > 0; --bit)
+    {
+      if (remainder & 0x8000)
+        remainder = (remainder << 1) ^ polynomial;
+      else
+        remainder = (remainder << 1);
+    }
+  }
+  return (remainder);
+}
 
 /* LEDs ---------------------------------------------------------------------*/
 void LiveLedOn(void)
