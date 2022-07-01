@@ -102,7 +102,7 @@ uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size);
 
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
-uint32_t FlashProgram(uint32_t address, uint8_t *data, uint8_t size);
+uint32_t FlashProgram(uint32_t address, uint8_t *data, uint16_t size);
 
 /* USER CODE END PFP */
 
@@ -382,8 +382,6 @@ static void MX_GPIO_Init(void)
 /* Usb------------------------------------------------------------------------*/
 void UsbRxTask(void)
 {
-  /* USER CODE BEGIN UsbRxTask */
-  /* Infinite loop */
   static uint32_t timestamp;
   static uint8_t startFlag;
 
@@ -394,7 +392,7 @@ void UsbRxTask(void)
       timestamp = HAL_GetTick();
       startFlag = 1;
     }
-    for(uint8_t i=0; i < sizeof(USB_UART_RxBuffer); i++)
+    for(uint16_t i=0; i < sizeof(USB_UART_RxBuffer); i++)
     {
       if(USB_UART_RxBuffer[i]=='\n')
       {
@@ -403,7 +401,7 @@ void UsbRxTask(void)
         HAL_UART_DMAStop(&husb);
         UsbParser(USB_UART_RxBuffer);
         memset(USB_UART_RxBuffer, 0x00, sizeof(USB_UART_RxBuffer));
-        HAL_UART_Receive_DMA(&huart3, (uint8_t*) USB_UART_RxBuffer, sizeof(USB_UART_RxBuffer));
+        HAL_UART_Receive_DMA(&husb, (uint8_t*) USB_UART_RxBuffer, sizeof(USB_UART_RxBuffer));
         break;
       }
     }
@@ -417,7 +415,6 @@ void UsbRxTask(void)
           __HAL_UART_CLEAR_FLAG(&husb,USART_SR_NE);
         if(__HAL_UART_GET_FLAG(&husb, USART_SR_FE))
           __HAL_UART_CLEAR_FLAG(&husb,USART_SR_FE);
-
         startFlag = 0;
         HAL_UART_DMAStop(&husb);
         memset(USB_UART_RxBuffer, 0x00, sizeof(USB_UART_RxBuffer));
@@ -489,40 +486,23 @@ void UsbParser(char *request)
       }
       else if(!strcmp(cmd, "FL")) //Flash Lock
       {
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
-
         if(HAL_FLASH_Lock() != HAL_OK)
           sprintf(USB_UART_TxBuffer, "!LOCK ERROR");
         else
           sprintf(USB_UART_TxBuffer, "OK");
-
       }
       else if(!strcmp(cmd, "FU")) //Flash Unlock
       {
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
-
         if(HAL_FLASH_Unlock() != HAL_OK)
           sprintf(USB_UART_TxBuffer, "!UNLOCK ERROR");
         else
           sprintf(USB_UART_TxBuffer, "OK");
-
       }
       else
       {
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
-
     if(spaces == 2)
     {
       sscanf(request, "%s %s %s", cmd, arg1, arg2);
@@ -548,7 +528,6 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
-
     if(spaces == 4)
     {
       sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
@@ -680,10 +659,10 @@ uint32_t FlashSectorErase(uint8_t start, uint8_t number)
   return sectorError;
 }
 
-uint32_t FlashProgram(uint32_t address, uint8_t *data, uint8_t size)
+uint32_t FlashProgram(uint32_t address, uint8_t *data, uint16_t size)
 {
   HAL_StatusTypeDef status = HAL_OK;
-  for(uint8_t i = 0; i< size; i++ )
+  for(uint16_t i = 0; i< size; i++ )
   {
     status = HAL_FLASH_Program(FLASH_TYPEPROGRAM_BYTE, address + i, data[i]);
     if(status != HAL_OK)
