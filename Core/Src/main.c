@@ -574,6 +574,13 @@ void UsbParser(char *request)
       }
       else if(!strcmp(cmd, "FU")) //Flash Unlock
       {
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
+
         uint8_t s1 = Mx25WriteEnable();
         HAL_StatusTypeDef s2 = HAL_FLASH_Unlock();
         if(s1== MX25_OK && s2 == HAL_OK)
