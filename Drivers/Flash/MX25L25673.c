@@ -61,6 +61,10 @@ uint8_t Mx25ReadId (uint8_t *data, uint32_t size)
   return MX25_OK;
 }
 
+/*
+ * addr: 0x0000 0000 - 0x0200 0000
+ * size: 0..256
+ */
 uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
 {
   /*** PP4B - Page Program***/
@@ -95,7 +99,7 @@ uint8_t Mx25WriteDsiable(void)
   return MX25_OK;
 }
 
-uint8_t LogFlashRead(uint32_t addr, uint8_t *data, uint32_t size)
+uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
 {
   /*** READ4B - Read Data Byte by 4 byte address ***/
   uint8_t cmd[5];
@@ -108,7 +112,6 @@ uint8_t LogFlashRead(uint32_t addr, uint8_t *data, uint32_t size)
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   HAL_SPI_Receive(_spi, data, size, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
-
   return MX25_OK;
 }
 /*
@@ -116,8 +119,6 @@ uint8_t LogFlashRead(uint32_t addr, uint8_t *data, uint32_t size)
  */
 uint8_t Mx25ChipErase(void)
 {
-  Mx25WriteEnable();
-
   /*** CE - Chip Erase ***/
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, (uint8_t[]){0x60}, 1, MX25_TIMEOUT);

@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include "MX25L25673.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -568,8 +569,16 @@ void UsbParser(char *request)
         uint16_t bsize = strtol(arg2, NULL, 16);
         if(bsize > 256)
           strcpy(USB_UART_TxBuffer, "!SIZE_ERROR");
-        for(uint16_t i = 0; i < bsize; i++)
-          data[i] = *(__IO uint8_t*)(address + i);
+        if((address & 0x10000000) ==  0x10000000)
+        {
+          address &= ~0x10000000;
+          Mx25Read(address, data, bsize);
+        }
+        else if ((address & 0x08000000) ==  0x08000000)
+        {
+          for(uint16_t i = 0; i < bsize; i++)
+            data[i] = *(__IO uint8_t*)(address + i);
+        }
         uint16_t crc = CalcCrc16Ansi(0, data, bsize);
         memset(arg3, 0, sizeof(arg3));
         BytesToHexaString(data, arg3, bsize);
@@ -585,7 +594,8 @@ void UsbParser(char *request)
       sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
       if(!strcmp(cmd, "FP"))
       {
-        uint32_t addr = strtol(arg1, NULL, 16);
+        uint32_t status = 0;
+        uint32_t address = strtol(arg1, NULL, 16);
         uint16_t bsize = strtol(arg2, NULL, 16);
         uint16_t crc = strtol(arg4, NULL, 16);
         if(strlen(arg3) != bsize * 2) //e.g: 010203 -> bsize = 3
@@ -595,10 +605,22 @@ void UsbParser(char *request)
           StringArrayToBytes(arg3, data, bsize);
           uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
           if(crc != clacCrc)
+          {
             strcpy(USB_UART_TxBuffer, "!CRC ERROR");
+          }
           else
           {
-            uint32_t status = FlashProgram(addr, data, bsize);
+            if((address & 0x10000000) ==  0x10000000)
+            {
+              address &= ~0x10000000;
+              status = Mx25PageProgram(address, data, bsize);
+            }
+            else if ((address & 0x08000000) ==  0x08000000)
+            {
+              status = FlashProgram(address, data, bsize);
+            }
+            else
+              status = 0x10;
             if(status != HAL_FLASH_ERROR_NONE)
               sprintf(USB_UART_TxBuffer, "%s %08lX", "!PROGRAM ERROR", status);
             else
