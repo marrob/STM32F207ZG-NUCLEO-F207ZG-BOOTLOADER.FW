@@ -539,17 +539,29 @@ void UsbParser(char *request)
       }
       else if(!strcmp(cmd, "FL")) //Flash Lock
       {
-        if(HAL_FLASH_Lock() != HAL_OK)
-          sprintf(USB_UART_TxBuffer, "!LOCK ERROR");
-        else
+        uint8_t s1 = Mx25WriteDisable();
+        HAL_StatusTypeDef s2 = HAL_FLASH_Lock();
+        if(s1== MX25_OK && s2 == HAL_OK)
           sprintf(USB_UART_TxBuffer, "OK");
+        else if(s1!= MX25_OK && s2 == HAL_OK)
+            sprintf(USB_UART_TxBuffer, "!INT FLASH LOCK ERROR");
+        else if (s1!= MX25_OK && s2 != HAL_OK)
+            sprintf(USB_UART_TxBuffer, "!EXT FLASH LOCK ERROR");
+        else
+            sprintf(USB_UART_TxBuffer, "!INT & EXT FLASH LOCK ERROR");
       }
       else if(!strcmp(cmd, "FU")) //Flash Unlock
       {
-        if(HAL_FLASH_Unlock() != HAL_OK)
-          sprintf(USB_UART_TxBuffer, "!UNLOCK ERROR");
-        else
+        uint8_t s1 = Mx25WriteEnable();
+        HAL_StatusTypeDef s2 = HAL_FLASH_Unlock();
+        if(s1== MX25_OK && s2 == HAL_OK)
           sprintf(USB_UART_TxBuffer, "OK");
+        else if(s1!= MX25_OK && s2 == HAL_OK)
+            sprintf(USB_UART_TxBuffer, "!INT FLASH UNLOCK ERROR");
+        else if (s1!= MX25_OK && s2 != HAL_OK)
+            sprintf(USB_UART_TxBuffer, "!EXT FLASH UNLOCK ERROR");
+        else
+            sprintf(USB_UART_TxBuffer, "!INT & EXT FLASH UNLOCK ERROR");
       }
       else
       {

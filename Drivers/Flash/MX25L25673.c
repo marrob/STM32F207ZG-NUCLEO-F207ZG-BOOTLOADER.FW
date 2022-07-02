@@ -90,7 +90,7 @@ uint8_t Mx25WriteEnable(void)
   return MX25_OK;
 }
 
-uint8_t Mx25WriteDsiable(void)
+uint8_t Mx25WriteDisable(void)
 {
   /*** WRDI - Write Disable ***/
   Mx25ChipEnable(MX25_CE_LOW);
