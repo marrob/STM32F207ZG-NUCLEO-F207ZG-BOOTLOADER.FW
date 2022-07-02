@@ -74,6 +74,8 @@ void Error_Handler(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/
+#define MX25_CS_Pin GPIO_PIN_4
+#define MX25_CS_GPIO_Port GPIOA
 #define LIVE_LED_Pin GPIO_PIN_7
 #define LIVE_LED_GPIO_Port GPIOB
 /* USER CODE BEGIN Private defines */
