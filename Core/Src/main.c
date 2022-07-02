@@ -44,12 +44,20 @@ typedef struct _AppTypeDef
   */
   uint32_t BootUpCnt;
   uint64_t UpTimeSec;
+  uint8_t IsFwUpdateMode;
 
 }Device_t;
+
+typedef void (*pFunction)(void);
 /* USER CODE END PTD */
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define BOOTLOADER_WAIT_FOR_FW_UPDATE  1000
+/*Start user code address: ADDR_FLASH_PAGE_10*/
+#define APP_FIRST_PAGE_ADDRESS    0x08005000
+
 
 
 /* USER CODE END PD */
@@ -104,9 +112,13 @@ void StringArrayToBytes(char *str, uint8_t *data, uint16_t bsize);
 void BytesToHexaString(uint8_t *data, char *dest, uint16_t bsize);
 uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size);
 
+void BootTask(void);
+
+
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
 uint32_t FlashProgram(uint32_t address, uint8_t *data, uint16_t size);
+
 
 /* USER CODE END PFP */
 
@@ -155,13 +167,16 @@ int main(void)
   hLiveLed.HalfPeriodTimeMs = 500;
   LiveLedInit(&hLiveLed);
 
-  /*** Terminal Init ***/
-//  printf(VT100_CLEARSCREEN);
-// printf(VT100_CURSORHOME);
-//  printf(VT100_ATTR_RESET);
+  /*** Defaults ***/
+  Device.IsFwUpdateMode = 0;
 
-//  printf(VT100_ATTR_GREEN);
-//  printf("Hello World\r\n");
+  /*** Terminal Init ***/
+  //printf(VT100_CLEARSCREEN);
+  //printf(VT100_CURSORHOME);
+  //printf(VT100_ATTR_RESET);
+
+  //printf(VT100_ATTR_GREEN);
+  //printf("Hello World\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -173,6 +188,8 @@ int main(void)
 
     UsbRxTask();
     UsbTxTask();
+
+    BootTask();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -537,6 +554,11 @@ void UsbParser(char *request)
       {
         sprintf(USB_UART_TxBuffer, "%lld", Device.UpTimeSec);
       }
+      else if(!strcmp(cmd,"FW-UPDATE"))
+      {
+        Device.IsFwUpdateMode = 1;
+        strcpy(USB_UART_TxBuffer, "OK");
+      }
       else if(!strcmp(cmd, "FL")) //Flash Lock
       {
         uint8_t s1 = Mx25WriteDisable();
@@ -646,6 +668,44 @@ void UsbParser(char *request)
       }
     }
     strcat(USB_UART_TxBuffer,"\n");
+  }
+}
+
+
+void BootTask(void)
+{
+  static uint32_t timestamp = 0;
+  static uint16_t counter = BOOTLOADER_WAIT_FOR_FW_UPDATE;
+  if( HAL_GetTick() - timestamp > 1000 && !Device.IsFwUpdateMode)
+  {
+    timestamp = HAL_GetTick();
+    counter--;
+
+    //DeviceUsrLog("Wait for a client... %d",  counter);
+    if(!counter)
+    {
+      if (((*(__IO uint32_t*)APP_FIRST_PAGE_ADDRESS) & 0x2FFE0000 ) == 0x20000000)
+      {
+        //DeviceDbgLog("I found a valid firmware!");
+        //IWatchdogDeInit();
+        HAL_DeInit();
+        HAL_UART_MspDeInit(&husb);
+        HAL_SPI_MspDeInit(&hspi1);
+
+        uint32_t appAddress = *(__IO uint32_t*) (APP_FIRST_PAGE_ADDRESS + 4);
+        /* Jump to user application */
+        pFunction pApp = (pFunction) appAddress;
+        /* Initialize user application's Stack Pointer */
+        __set_MSP(*(__IO uint32_t*) APP_FIRST_PAGE_ADDRESS);
+
+        pApp();
+      }
+      else
+      {
+        //DeviceUsrLog("There is nothing");
+        counter = BOOTLOADER_WAIT_FOR_FW_UPDATE;
+      }
+    }
   }
 }
 
