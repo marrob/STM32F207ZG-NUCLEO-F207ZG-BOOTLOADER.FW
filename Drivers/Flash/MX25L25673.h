@@ -23,6 +23,7 @@
 /* Mx25 ---------------------------------------------------------------------*/
 
 uint8_t Mx25Init(SPI_HandleTypeDef *spi);
+uint8_t Mx25ReadId (uint16_t *id);
 uint8_t Mx25ReadStatusReg(void);
 uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size);
 uint8_t Mx25WriteEnable(void);

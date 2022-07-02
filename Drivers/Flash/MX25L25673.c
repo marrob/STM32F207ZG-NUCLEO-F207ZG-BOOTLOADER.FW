@@ -51,12 +51,17 @@ static inline void Mx25ChipEnable(uint8_t state)
  * ha leveszem a page-en belül címeket, akkor:
  * 0x00 00 00 .. FF FF FF ez 0-tól 16777215-ig terjedo cimtartomány (ehhez kell a 4 bájtos címzés)
  */
-uint8_t Mx25ReadId (uint8_t *data, uint32_t size)
+
+
+/**
+ * id:0x20C2
+ */
+uint8_t Mx25ReadId (uint16_t *id)
 {
   /*** RDID - read identification***/
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, (uint8_t[]){0x9F}, 1, MX25_TIMEOUT);
-  HAL_SPI_Receive(_spi, data, size, MX25_TIMEOUT);
+  HAL_SPI_Receive(_spi, (uint8_t*)id, sizeof(uint16_t), MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
   return MX25_OK;
 }
