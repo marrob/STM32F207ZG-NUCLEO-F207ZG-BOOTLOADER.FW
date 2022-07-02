@@ -491,12 +491,12 @@ void UsbTxTask(void)
 void UsbParser(char *request)
 {
   uint8_t spaces = 0;
-  char cmd[USB_CMD_LENGTH];
-  char arg1[USB_ARG1_LENGTH];
-  char arg2[USB_ARG2_LENGTH];
-  char arg3[USB_ARG3_LENGTH];
-  char arg4[USB_ARG4_LENGTH];
-  uint8_t data[256];
+  static char cmd[USB_CMD_LENGTH];
+  static char arg1[USB_ARG1_LENGTH];
+  static char arg2[USB_ARG2_LENGTH];
+  static char arg3[USB_ARG3_LENGTH];
+  static char arg4[USB_ARG4_LENGTH];
+  static uint8_t data[256];
 
   memset(cmd,0x00, sizeof(cmd));
   memset(arg1,0x00, sizeof(arg1));
