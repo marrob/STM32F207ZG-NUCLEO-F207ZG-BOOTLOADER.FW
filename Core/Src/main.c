@@ -189,7 +189,7 @@ int main(void)
     UsbRxTask();
     UsbTxTask();
 
-    BootTask();
+    //BootTask();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
