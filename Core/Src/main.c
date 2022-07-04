@@ -46,6 +46,7 @@ typedef struct _AppTypeDef
   uint64_t UpTimeSec;
   uint8_t IsFwUpdateMode;
 
+  uint16_t FlashId;
 }Device_t;
 
 typedef void (*pFunction)(void);
@@ -171,9 +172,7 @@ int main(void)
   Device.IsFwUpdateMode = 0;
 
   Mx25Init(&hspi1);
-
-  uint16_t id = 0;
-  Mx25ReadId(&id);
+  Mx25ReadId(&Device.FlashId);
 
   /*** Terminal Init ***/
   //printf(VT100_CLEARSCREEN);
