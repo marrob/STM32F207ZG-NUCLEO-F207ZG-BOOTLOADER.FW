@@ -605,15 +605,15 @@ void UsbParser(char *request)
     {
       sscanf(request, "%s %s %s", cmd, arg1, arg2);
       if(!strcmp(cmd, "FE")) //cmd start num
-      {
+      {/*** Flash Erase ***/
         sprintf(USB_UART_TxBuffer,"%08lX", FlashSectorErase(strtol(arg1, NULL, 16), strtol(arg2, NULL, 16)));
       }
       else if(!strcmp(cmd, "FR")) //cmd addr size
-      {
+      {/*** Flash Read ***/
         uint32_t address = strtol(arg1, NULL, 16);
         uint16_t bsize = strtol(arg2, NULL, 16);
         if(bsize > 256)
-          strcpy(USB_UART_TxBuffer, "!SIZE_ERROR");
+          strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
         if((address & 0x10000000) ==  0x10000000)
         {
           address &= ~0x10000000;
@@ -623,6 +623,10 @@ void UsbParser(char *request)
         {
           for(uint16_t i = 0; i < bsize; i++)
             data[i] = *(__IO uint8_t*)(address + i);
+        }
+        else
+        {
+          strcpy(USB_UART_TxBuffer, "!ADDRESS ERROR");
         }
         uint16_t crc = CalcCrc16Ansi(0, data, bsize);
         memset(arg3, 0, sizeof(arg3));
@@ -659,17 +663,23 @@ void UsbParser(char *request)
             {
               address &= ~0x10000000;
               status = Mx25PageProgram(address, data, bsize);
+              if(status != HAL_FLASH_ERROR_NONE)
+                sprintf(USB_UART_TxBuffer, "%s %08lX", "!EXT PROG ERROR", status);
+              else
+                strcpy(USB_UART_TxBuffer, "OK");
             }
             else if ((address & 0x08000000) ==  0x08000000)
             {
               status = FlashProgram(address, data, bsize);
+              if(status != HAL_FLASH_ERROR_NONE)
+                sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
+              else
+                strcpy(USB_UART_TxBuffer, "OK");
             }
             else
-              status = 0x10;
-            if(status != HAL_FLASH_ERROR_NONE)
-              sprintf(USB_UART_TxBuffer, "%s %08lX", "!PROGRAM ERROR", status);
-            else
-              strcpy(USB_UART_TxBuffer, "OK");
+            {
+              strcpy(USB_UART_TxBuffer, "!ADDRESS ERROR");
+            }
           }
         }
       }
