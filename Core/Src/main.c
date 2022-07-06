@@ -601,14 +601,35 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
-    if(spaces == 2)
+    else if(spaces == 1)
     {
-      sscanf(request, "%s %s %s", cmd, arg1, arg2);
-      if(!strcmp(cmd, "FE")) //cmd start num
+      sscanf(request, "%s %s", cmd, arg1);
+      if(!strcmp(cmd, "FE")) //cmd sector
       {/*** Flash Erase ***/
-        sprintf(USB_UART_TxBuffer,"%08lX", FlashSectorErase(strtol(arg1, NULL, 16), strtol(arg2, NULL, 16)));
+        uint8_t sector = strtol(arg1, NULL, 16);
+        if(sector < 128)
+        {
+          HAL_Delay(2000);
+          uint32_t erase_status = FlashSectorErase(sector,1);
+          if(erase_status == 0xFFFFFFFF)
+            strcpy(USB_UART_TxBuffer,"OK");
+          else
+            sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
+        }
+        else
+        {
+           uint8_t chip_status = Mx25ChipErase();
+           if(chip_status == MX25_OK)
+             strcpy(USB_UART_TxBuffer,"OK");
+           else
+             sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+        }
       }
-      else if(!strcmp(cmd, "FR")) //cmd addr size
+    }
+    else if(spaces == 2)
+    {
+      sscanf(request, "%s %s  %s", cmd, arg1, arg2);
+      if(!strcmp(cmd, "FR")) //cmd addr size
       {/*** Flash Read ***/
         uint32_t address = strtol(arg1, NULL, 16);
         uint16_t bsize = strtol(arg2, NULL, 16);
@@ -638,7 +659,7 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
-    if(spaces == 4)
+    else if(spaces == 4)
     {
       sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
       if(!strcmp(cmd, "FP"))
