@@ -55,11 +55,12 @@ typedef void (*pFunction)(void);
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define BOOTLOADER_WAIT_FOR_FW_UPDATE  1000
-/*Start user code address: ADDR_FLASH_PAGE_10*/
-#define APP_FIRST_PAGE_ADDRESS    0x08005000
+#define BTLDR_WAIT_FOR_FW_UPDATE   1000
+#define APP_FLASH_START_ADDR      0x08040000
+#define APP_FLASH_END_ADDR        0x080FFFFF
 
-
+#define BTLDR_FLASH_END_ADDR       0x0803FFFF
+#define BTLDR_FLASH_LAST_SECTOR    5 // 5 is the booloader
 
 /* USER CODE END PD */
 
@@ -563,39 +564,7 @@ void UsbParser(char *request)
         Device.IsFwUpdateMode = 1;
         strcpy(USB_UART_TxBuffer, "OK");
       }
-      else if(!strcmp(cmd, "FL")) //Flash Lock
-      {
-        uint8_t s1 = Mx25WriteDisable();
-        HAL_StatusTypeDef s2 = HAL_FLASH_Lock();
-        if(s1== MX25_OK && s2 == HAL_OK)
-          sprintf(USB_UART_TxBuffer, "OK");
-        else if(s1!= MX25_OK && s2 == HAL_OK)
-            sprintf(USB_UART_TxBuffer, "!INT FLASH LOCK ERROR");
-        else if (s1!= MX25_OK && s2 != HAL_OK)
-            sprintf(USB_UART_TxBuffer, "!EXT FLASH LOCK ERROR");
-        else
-            sprintf(USB_UART_TxBuffer, "!INT & EXT FLASH LOCK ERROR");
-      }
-      else if(!strcmp(cmd, "FU")) //Flash Unlock
-      {
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
-        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
 
-        uint8_t s1 = Mx25WriteEnable();
-        HAL_StatusTypeDef s2 = HAL_FLASH_Unlock();
-        if(s1== MX25_OK && s2 == HAL_OK)
-          sprintf(USB_UART_TxBuffer, "OK");
-        else if(s1!= MX25_OK && s2 == HAL_OK)
-            sprintf(USB_UART_TxBuffer, "!INT FLASH UNLOCK ERROR");
-        else if (s1!= MX25_OK && s2 != HAL_OK)
-            sprintf(USB_UART_TxBuffer, "!EXT FLASH UNLOCK ERROR");
-        else
-            sprintf(USB_UART_TxBuffer, "!INT & EXT FLASH UNLOCK ERROR");
-      }
       else
       {
         strcpy(USB_UART_TxBuffer, "!UNKNOWN");
@@ -604,32 +573,98 @@ void UsbParser(char *request)
     else if(spaces == 1)
     {
       sscanf(request, "%s %s", cmd, arg1);
-      if(!strcmp(cmd, "FE")) //cmd sector
-      {/*** Flash Erase ***/
-        uint8_t sector = strtol(arg1, NULL, 16);
-        if(sector < 128)
+
+      if(!strcmp(cmd, "FL"))
+      {/*** Flash Lock ***/
+        if(arg1[0]=='I')
         {
-          HAL_Delay(2000);
-          uint32_t erase_status = FlashSectorErase(sector,1);
-          if(erase_status == 0xFFFFFFFF)
-            strcpy(USB_UART_TxBuffer,"OK");
-          else
-            sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
-        }
-        else
-        {
-           uint8_t chip_status = Mx25ChipErase();
-           if(chip_status == MX25_OK)
-             strcpy(USB_UART_TxBuffer,"OK");
+           if(HAL_FLASH_Lock() != HAL_OK)
+             strcpy(USB_UART_TxBuffer, "!INT LOCK ERROR");
            else
-             sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+             strcpy(USB_UART_TxBuffer, "OK");
         }
+        else if(arg1[0]=='E')
+        {
+          if( Mx25WriteDisable() != MX25_OK)
+            strcpy(USB_UART_TxBuffer, "!INT FLASH LOCK ERROR");
+          else
+            strcpy(USB_UART_TxBuffer, "OK");
+        }
+      }
+      else if(!strcmp(cmd, "FU"))
+      {/*** Flash Unlock ***/
+        if(arg1[0]=='I')
+        {
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
+          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
+          if(HAL_FLASH_Unlock() != HAL_OK)
+            strcpy(USB_UART_TxBuffer, "!INT FLASH UNLOCK ERROR");
+          else
+            strcpy(USB_UART_TxBuffer, "OK");
+        }
+        else if(arg1[0]=='E')
+        {
+          if(Mx25WriteEnable()!=MX25_OK)
+            strcpy(USB_UART_TxBuffer, "!EXT FLASH LOCK ERROR");
+          else
+            strcpy(USB_UART_TxBuffer, "OK");
+        }
+      }
+      else if(!strcmp(cmd,"FB"))
+      {/*** Flash Is Busy ***/
+        if(arg1[0]=='I')
+        {
+
+        }
+        else if(arg1[0]=='E')
+        {
+          if(Mx25IsBusy()== MX25_OK)
+            strcpy(USB_UART_TxBuffer, "FREE"); //TESTED
+          else
+            strcpy(USB_UART_TxBuffer, "BUSY");
+        }
+      }
+      else
+      {
+        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
       }
     }
     else if(spaces == 2)
     {
-      sscanf(request, "%s %s  %s", cmd, arg1, arg2);
-      if(!strcmp(cmd, "FR")) //cmd addr size
+      sscanf(request, "%s %s %s", cmd, arg1, arg2);
+
+      if(!strcmp(cmd, "FE")) //cmd where sector
+      {/*** Flash Erase ***/
+        if(arg1[0]=='I')
+        {
+          uint8_t sector = strtol(arg2, NULL, 16);
+          if(sector <= BTLDR_FLASH_LAST_SECTOR)
+          {
+            strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
+          }
+          else
+          {
+            uint32_t erase_status = FlashSectorErase(sector,1);
+            if(erase_status == 0xFFFFFFFF)
+              strcpy(USB_UART_TxBuffer,"OK");
+            else
+              printf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
+          }
+        }
+        else if(arg1[0]=='E')
+        {
+          uint8_t chip_status = Mx25ChipErase();
+          if(chip_status == MX25_OK)
+            strcpy(USB_UART_TxBuffer,"OK");
+          else
+            sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+        }
+      }
+      else if(!strcmp(cmd, "FR")) //cmd addr size
       {/*** Flash Read ***/
         uint32_t address = strtol(arg1, NULL, 16);
         uint16_t bsize = strtol(arg2, NULL, 16);
@@ -691,11 +726,25 @@ void UsbParser(char *request)
             }
             else if ((address & 0x08000000) ==  0x08000000)
             {
-              status = FlashProgram(address, data, bsize);
-              if(status != HAL_FLASH_ERROR_NONE)
-                sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
+              if(address < BTLDR_FLASH_END_ADDR)
+              {
+                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE BOOTLOADER AREA!"); //TESTED
+              }
               else
-                strcpy(USB_UART_TxBuffer, "OK");
+              {
+                if(address + bsize > APP_FLASH_END_ADDR)
+                {
+                  strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
+                }
+                else
+                {
+                  status = FlashProgram(address, data, bsize);
+                  if(status != HAL_FLASH_ERROR_NONE)
+                    sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
+                  else
+                    strcpy(USB_UART_TxBuffer, "OK");
+                }
+              }
             }
             else
             {
@@ -717,7 +766,7 @@ void UsbParser(char *request)
 void BootTask(void)
 {
   static uint32_t timestamp = 0;
-  static uint16_t counter = BOOTLOADER_WAIT_FOR_FW_UPDATE;
+  static uint16_t counter = BTLDR_WAIT_FOR_FW_UPDATE;
   if( HAL_GetTick() - timestamp > 1000 && !Device.IsFwUpdateMode)
   {
     timestamp = HAL_GetTick();
@@ -726,7 +775,7 @@ void BootTask(void)
     //DeviceUsrLog("Wait for a client... %d",  counter);
     if(!counter)
     {
-      if (((*(__IO uint32_t*)APP_FIRST_PAGE_ADDRESS) & 0x2FFE0000 ) == 0x20000000)
+      if (((*(__IO uint32_t*)APP_FLASH_START_ADDR) & 0x2FFE0000 ) == 0x20000000)
       {
         //DeviceDbgLog("I found a valid firmware!");
         //IWatchdogDeInit();
@@ -734,18 +783,18 @@ void BootTask(void)
         HAL_UART_MspDeInit(&husb);
         HAL_SPI_MspDeInit(&hspi1);
 
-        uint32_t appAddress = *(__IO uint32_t*) (APP_FIRST_PAGE_ADDRESS + 4);
+        uint32_t appAddress = *(__IO uint32_t*) (APP_FLASH_START_ADDR + 4);
         /* Jump to user application */
         pFunction pApp = (pFunction) appAddress;
         /* Initialize user application's Stack Pointer */
-        __set_MSP(*(__IO uint32_t*) APP_FIRST_PAGE_ADDRESS);
+        __set_MSP(*(__IO uint32_t*) APP_FLASH_START_ADDR);
 
         pApp();
       }
       else
       {
         //DeviceUsrLog("There is nothing");
-        counter = BOOTLOADER_WAIT_FOR_FW_UPDATE;
+        counter = BTLDR_WAIT_FOR_FW_UPDATE;
       }
     }
   }

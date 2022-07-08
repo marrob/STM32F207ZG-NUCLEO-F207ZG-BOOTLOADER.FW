@@ -29,6 +29,9 @@ uint8_t Mx25Init(SPI_HandleTypeDef *spi)
   HAL_SPI_Transmit(_spi, (uint8_t[]){0xB7}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
+
+  Mx25ResetQuadSpi();
+
   return MX25_OK;
 }
 
@@ -86,6 +89,15 @@ uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
   return MX25_OK;
 }
 
+uint8_t Mx25ResetQuadSpi(void)
+{
+  /*** RSTQIO - RSTQIO***/
+  Mx25ChipEnable(MX25_CE_LOW);
+  HAL_SPI_Transmit(_spi, (uint8_t[]){0xF5}, 1, MX25_TIMEOUT);
+  Mx25ChipEnable(MX25_CE_HIGH);
+  return MX25_OK;
+}
+
 uint8_t Mx25WriteEnable(void)
 {
   /*** WREN - Write Enable***/
@@ -121,14 +133,19 @@ uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
 }
 /*
  * we have to wait for a long time ...
+ * 110-150sec cycle time
  */
 uint8_t Mx25ChipErase(void)
 {
+  if(Mx25IsBusy() != MX25_OK )
+    return MX25_BUSY;
+
   /*** CE - Chip Erase ***/
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, (uint8_t[]){0x60}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
+  /*
   uint32_t timestamp = HAL_GetTick();
   uint8_t status = 0;
   do
@@ -136,9 +153,19 @@ uint8_t Mx25ChipErase(void)
     if(HAL_GetTick() - timestamp > 160000)
       return MX25_TIMEOUT_ERR;
     status = Mx25ReadStatusReg();
-  }while((status & 0x01)); /*Write In Progress*/
-
+  }while((status & 0x01)); //Write In Progress
+  */
   return MX25_OK;
+}
+
+uint8_t Mx25IsBusy()
+{
+  uint8_t status = Mx25ReadStatusReg();
+
+  if(status & 0x01)
+    return MX25_BUSY;
+  else
+    return MX25_OK;
 }
 
 uint8_t Mx25ReadStatusReg(void)

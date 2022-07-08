@@ -10,8 +10,9 @@
 
 #define MX25_OK              0
 #define MX25_FAIL            1
-#define MX25_ARG_ERR         2
-#define MX25_TIMEOUT_ERR     3
+#define MX25_BUSY            2
+#define MX25_ARG_ERR         3
+#define MX25_TIMEOUT_ERR     4
 
 #define MX25_PAGE_SIZE 256
 #define MX25_SIZE             32000000/MX25_PAGE_SIZE
@@ -30,5 +31,7 @@ uint8_t Mx25WriteEnable(void);
 uint8_t Mx25WriteDisable(void);
 uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size);
 uint8_t Mx25ChipErase(void);
+uint8_t Mx25ResetQuadSpi(void);
+uint8_t Mx25IsBusy();
 
 #endif /* _MX25_H_ */
