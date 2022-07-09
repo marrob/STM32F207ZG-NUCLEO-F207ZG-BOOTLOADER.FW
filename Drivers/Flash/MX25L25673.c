@@ -70,18 +70,39 @@ uint8_t Mx25ReadId (uint16_t *id)
 }
 
 /*
+ *
  * addr: 0x0000 0000 - 0x0200 0000
+ * address: aligned only page:
+ * example:
+ * page 1. address is: 0x0000 (0dec)
+ * page 2. address is  0x0100 (256dec)
+ * page 3. address is  0x0200
+ *
  * size: 0..256
+ * The Page Program instruction requires
+ * that all the data bytes fall within the same 256-byte page. The low order address byte A[7:0] specifies the starting
+ * address within the selected page. Bytes that will cross a page boundary will wrap to the beginning of the selected
+ * page. The device can accept (256 minus A[7:0]) data bytes without wrapping. If 256 data bytes are going to be
+ * programmed, A[7:0] should be set to 0.
  */
 uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
 {
+  if(Mx25WritInProcess() != MX25_OK )
+    return MX25_WRITE_IN_PROCESS;
+
+  if((addr % 256) + size > 256)
+    return MX25_NOT_ALIGNED;
+
+  Mx25WriteEnable();
+
   /*** PP4B - Page Program***/
   uint8_t cmd[5];
   cmd[0] = 0x12;
-  cmd[1] = addr;
-  cmd[2] = addr >> 8;
-  cmd[3] = addr >> 16;
-  cmd[4] = addr >> 24;
+  cmd[1] = addr >> 24;
+  cmd[2] = addr >> 16;
+  cmd[3] = addr >> 8;
+  cmd[4] = addr;
+
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   HAL_SPI_Transmit(_spi, data, size, MX25_TIMEOUT);
@@ -98,6 +119,9 @@ uint8_t Mx25ResetQuadSpi(void)
   return MX25_OK;
 }
 
+/*
+ * WEL automatically clears to “0” when a program or erase operation completes.
+ */
 uint8_t Mx25WriteEnable(void)
 {
   /*** WREN - Write Enable***/
@@ -121,10 +145,11 @@ uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
   /*** READ4B - Read Data Byte by 4 byte address ***/
   uint8_t cmd[5];
   cmd[0] = 0x13;
-  cmd[1] = addr;
-  cmd[2] = addr >> 8;
-  cmd[3] = addr >> 16;
-  cmd[4] = addr >> 24;
+  cmd[1] = addr >> 24;
+  cmd[2] = addr >> 16;
+  cmd[3] = addr >> 8;
+  cmd[4] = addr;
+
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   HAL_SPI_Receive(_spi, data, size, MX25_TIMEOUT);
@@ -137,33 +162,66 @@ uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
  */
 uint8_t Mx25ChipErase(void)
 {
-  if(Mx25IsBusy() != MX25_OK )
-    return MX25_BUSY;
+  if(Mx25WritInProcess() != MX25_OK )
+    return MX25_WRITE_IN_PROCESS;
+
+  Mx25WriteEnable();
 
   /*** CE - Chip Erase ***/
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, (uint8_t[]){0x60}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
-  /*
-  uint32_t timestamp = HAL_GetTick();
-  uint8_t status = 0;
-  do
-  {
-    if(HAL_GetTick() - timestamp > 160000)
-      return MX25_TIMEOUT_ERR;
-    status = Mx25ReadStatusReg();
-  }while((status & 0x01)); //Write In Progress
-  */
   return MX25_OK;
 }
 
-uint8_t Mx25IsBusy()
+uint8_t Mx25Erase4kSector(uint32_t addr)
+{
+  if(Mx25WritInProcess() != MX25_OK )
+    return MX25_WRITE_IN_PROCESS;
+
+  Mx25WriteEnable();
+
+  /*** SE Sector Erase ***/
+  uint8_t cmd[4];
+  cmd[0] = 0x20;
+  cmd[1] = addr >> 16;
+  cmd[2] = addr >> 8;
+  cmd[3] = addr;
+
+  Mx25ChipEnable(MX25_CE_LOW);
+  HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
+  Mx25ChipEnable(MX25_CE_HIGH);
+  return MX25_OK;
+}
+
+uint8_t Mx25Erase64kBlock(uint32_t addr)
+{
+  if(Mx25WritInProcess() != MX25_OK )
+    return MX25_WRITE_IN_PROCESS;
+
+  Mx25WriteEnable();
+
+  /*** BE Block Erase ***/
+  uint8_t cmd[5];
+  cmd[0] = 0xD8;
+  cmd[1] = addr >> 24;
+  cmd[2] = addr >> 16;
+  cmd[3] = addr >> 8;
+  cmd[4] = addr;
+
+  Mx25ChipEnable(MX25_CE_LOW);
+  HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
+  Mx25ChipEnable(MX25_CE_HIGH);
+  return MX25_OK;
+}
+
+uint8_t Mx25WritInProcess()
 {
   uint8_t status = Mx25ReadStatusReg();
-
+  /*** WIP bit ***/
   if(status & 0x01)
-    return MX25_BUSY;
+    return MX25_WRITE_IN_PROCESS;
   else
     return MX25_OK;
 }

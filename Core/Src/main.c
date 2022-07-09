@@ -55,12 +55,15 @@ typedef void (*pFunction)(void);
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define BTLDR_WAIT_FOR_FW_UPDATE   1000
+#define BTLDR_WAIT_FOR_FW_UPDATE  1000
 #define APP_FLASH_START_ADDR      0x08040000
 #define APP_FLASH_END_ADDR        0x080FFFFF
 
-#define BTLDR_FLASH_END_ADDR       0x0803FFFF
-#define BTLDR_FLASH_LAST_SECTOR    5 // 5 is the booloader
+#define BTLDR_FLASH_END_ADDR      0x0803FFFF
+#define BTLDR_FLASH_LAST_SECTOR   5 // 5 is the booloader
+
+#define EXT_FLASH_END_ADDR        0x01FFFFFF
+#define EXT_FLASH_SIZE            0x02000000
 
 /* USER CODE END PD */
 
@@ -318,7 +321,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
   hspi1.Init.NSS = SPI_NSS_SOFT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_256;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -382,7 +385,7 @@ static void MX_USART3_UART_Init(void)
 
   /* USER CODE END USART3_Init 1 */
   huart3.Instance = USART3;
-  huart3.Init.BaudRate = 460800;
+  huart3.Init.BaudRate = 921600;
   huart3.Init.WordLength = UART_WORDLENGTH_8B;
   huart3.Init.StopBits = UART_STOPBITS_1;
   huart3.Init.Parity = UART_PARITY_NONE;
@@ -545,11 +548,11 @@ void UsbParser(char *request)
       }
       else if(!strcmp(cmd, "*WHOIS?"))
       {
-        strcpy(USB_UART_TxBuffer, DEVICE_NAME);
+        strcpy(USB_UART_TxBuffer, DEVICE_NAME); //TESTED
       }
       else if(!strcmp(cmd, "*VER?"))
       {
-        strcpy(USB_UART_TxBuffer, DEVICE_FW);
+        strcpy(USB_UART_TxBuffer, DEVICE_FW); //TESTED
       }
       else if(!strcmp(cmd, "*UID?"))
       {
@@ -585,10 +588,7 @@ void UsbParser(char *request)
         }
         else if(arg1[0]=='E')
         {
-          if( Mx25WriteDisable() != MX25_OK)
-            strcpy(USB_UART_TxBuffer, "!INT FLASH LOCK ERROR");
-          else
-            strcpy(USB_UART_TxBuffer, "OK");
+          strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
         }
       }
       else if(!strcmp(cmd, "FU"))
@@ -608,10 +608,7 @@ void UsbParser(char *request)
         }
         else if(arg1[0]=='E')
         {
-          if(Mx25WriteEnable()!=MX25_OK)
-            strcpy(USB_UART_TxBuffer, "!EXT FLASH LOCK ERROR");
-          else
-            strcpy(USB_UART_TxBuffer, "OK");
+          strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
         }
       }
       else if(!strcmp(cmd,"FB"))
@@ -622,7 +619,7 @@ void UsbParser(char *request)
         }
         else if(arg1[0]=='E')
         {
-          if(Mx25IsBusy()== MX25_OK)
+          if(Mx25WritInProcess()== MX25_OK)
             strcpy(USB_UART_TxBuffer, "FREE"); //TESTED
           else
             strcpy(USB_UART_TxBuffer, "BUSY");
@@ -639,9 +636,10 @@ void UsbParser(char *request)
 
       if(!strcmp(cmd, "FE")) //cmd where sector
       {/*** Flash Erase ***/
+        uint32_t sector = strtol(arg2, NULL, 16);
         if(arg1[0]=='I')
         {
-          uint8_t sector = strtol(arg2, NULL, 16);
+
           if(sector <= BTLDR_FLASH_LAST_SECTOR)
           {
             strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
@@ -657,7 +655,7 @@ void UsbParser(char *request)
         }
         else if(arg1[0]=='E')
         {
-          uint8_t chip_status = Mx25ChipErase();
+          uint8_t chip_status = Mx25Erase64kBlock(sector);
           if(chip_status == MX25_OK)
             strcpy(USB_UART_TxBuffer,"OK");
           else
@@ -698,31 +696,45 @@ void UsbParser(char *request)
     {
       sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
       if(!strcmp(cmd, "FP"))
-      {
+      {/*** Flash Program ***/
         uint32_t status = 0;
         uint32_t address = strtol(arg1, NULL, 16);
         uint16_t bsize = strtol(arg2, NULL, 16);
         uint16_t crc = strtol(arg4, NULL, 16);
+        strcpy(USB_UART_TxBuffer, "OK");
         if(strlen(arg3) != bsize * 2) //e.g: 010203 -> bsize = 3
-          strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
+          strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA SIZE IS INVALID!"); //TESTED
         else
         {
+          strcpy(USB_UART_TxBuffer, "OK");
+
           StringArrayToBytes(arg3, data, bsize);
           uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
           if(crc != clacCrc)
           {
-            strcpy(USB_UART_TxBuffer, "!CRC ERROR");
+            strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA HAS INVALID CRC!"); //TESTED
           }
           else
           {
             if((address & 0x10000000) ==  0x10000000)
             {
               address &= ~0x10000000;
-              status = Mx25PageProgram(address, data, bsize);
-              if(status != HAL_FLASH_ERROR_NONE)
-                sprintf(USB_UART_TxBuffer, "%s %08lX", "!EXT PROG ERROR", status);
+              if(address + bsize > EXT_FLASH_END_ADDR)
+              {
+                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF EXT FLASH AREA!"); //TESTED
+              }
               else
-                strcpy(USB_UART_TxBuffer, "OK");
+              {
+                status = Mx25PageProgram(address, data, bsize);
+                if(status == MX25_WRITE_IN_PROCESS)
+                  strcpy(USB_UART_TxBuffer, "ERROR: WRITE IN PROCESS, PLEASE WAIT!");
+                else if (status == MX25_NOT_ALIGNED)
+                  strcpy(USB_UART_TxBuffer, "ERROR: NOT ALIGNED!"); //TESTED
+                else if(status == MX25_NOT_WRITE_ENALBE)
+                  strcpy(USB_UART_TxBuffer, "ERROR: NOT WRITE ENABLE!");
+                else
+                  strcpy(USB_UART_TxBuffer, "OK");
+              }
             }
             else if ((address & 0x08000000) ==  0x08000000)
             {
@@ -748,7 +760,7 @@ void UsbParser(char *request)
             }
             else
             {
-              strcpy(USB_UART_TxBuffer, "!ADDRESS ERROR");
+              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE INVALID ADDRESS!"); //TESTED
             }
           }
         }
