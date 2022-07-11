@@ -57,16 +57,17 @@ typedef void (*pFunction)(void);
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
 
-#define BTLDR_WAIT_FOR_FW_UPDATE  1000
-#define APP_FLASH_START_ADDR      0x08040000
-#define APP_FLASH_END_ADDR        0x080FFFFF
-
-#define BTLDR_FLASH_END_ADDR      0x0803FFFF
+#define INT_FLASH_BASE_ADDR       0x08000000 //thumb address...
+#define APP_FLASH_SIZE            0x100000 - 0x40000 //-> 768KB
+#define BTLDR_SIZE                0x40000
 #define BTLDR_FLASH_LAST_SECTOR   5 // 5 is the booloader
-
 #define EXT_FLASH_BASE_ADDR       0x10000000
 #define EXT_FLASH_SIZE            0x02000000 //last address is 0x01FFFFFF
 
+#define APP_FLASH_START_ADDR      INT_FLASH_BASE_ADDR + BTLDR_SIZE - 1
+
+
+#define BTLDR_WAIT_FOR_FW_UPDATE  1000
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -682,7 +683,7 @@ void UsbParser(char *request)
           address &= ~EXT_FLASH_BASE_ADDR;
           Mx25Read(address, data, bsize);
         }
-        else if ((address & 0x08000000) ==  0x08000000)
+        else if ((address & INT_FLASH_BASE_ADDR) == INT_FLASH_BASE_ADDR)
         {
           for(uint16_t i = 0; i < bsize; i++)
             data[i] = *(__IO uint8_t*)(address + i);
@@ -744,15 +745,15 @@ void UsbParser(char *request)
                   strcpy(USB_UART_TxBuffer, "OK");
               }
             }
-            else if ((address & 0x08000000) ==  0x08000000)
+            else if ((address & INT_FLASH_BASE_ADDR) == INT_FLASH_BASE_ADDR)
             {
-              if(address < BTLDR_FLASH_END_ADDR)
+              if(address < INT_FLASH_BASE_ADDR + BTLDR_SIZE)
               {
                 strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE BOOTLOADER AREA!"); //TESTED
               }
               else
               {
-                if(address + bsize > APP_FLASH_END_ADDR)
+                if(address + bsize > INT_FLASH_BASE_ADDR + APP_FLASH_SIZE)
                 {
                   strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
                 }
