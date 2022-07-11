@@ -8,6 +8,8 @@
 #ifndef _MX25_H_
 #define _MX25_H_
 
+
+
 #define MX25_OK                 0
 #define MX25_FAIL               1
 #define MX25_WRITE_IN_PROCESS   2
@@ -37,5 +39,8 @@ uint8_t Mx25ResetQuadSpi(void);
 uint8_t Mx25WritInProcess();
 uint8_t Mx25Erase4kSector(uint32_t addr);
 uint8_t Mx25Erase64kBlock(uint32_t addr);
+uint8_t Mx25Reset(void);
+uint8_t Mx25ReadSecurityReg(void);
+uint8_t Mx25Erase32kBlock(uint32_t addr);
 
 #endif /* _MX25_H_ */

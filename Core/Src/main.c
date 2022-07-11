@@ -18,6 +18,8 @@
   */
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
+
+
 #include "main.h"
 
 /* Private includes ----------------------------------------------------------*/
@@ -25,7 +27,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include "MX25L25673.h"
+#include <MX25L25673_stm_hal.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -62,8 +64,8 @@ typedef void (*pFunction)(void);
 #define BTLDR_FLASH_END_ADDR      0x0803FFFF
 #define BTLDR_FLASH_LAST_SECTOR   5 // 5 is the booloader
 
-#define EXT_FLASH_END_ADDR        0x01FFFFFF
-#define EXT_FLASH_SIZE            0x02000000
+#define EXT_FLASH_BASE_ADDR       0x10000000
+#define EXT_FLASH_SIZE            0x02000000 //last address is 0x01FFFFFF
 
 /* USER CODE END PD */
 
@@ -178,13 +180,6 @@ int main(void)
   Mx25Init(&hspi1);
   Mx25ReadId(&Device.FlashId);
 
-  /*** Terminal Init ***/
-  //printf(VT100_CLEARSCREEN);
-  //printf(VT100_CURSORHOME);
-  //printf(VT100_ATTR_RESET);
-
-  //printf(VT100_ATTR_GREEN);
-  //printf("Hello World\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -633,13 +628,11 @@ void UsbParser(char *request)
     else if(spaces == 2)
     {
       sscanf(request, "%s %s %s", cmd, arg1, arg2);
-
       if(!strcmp(cmd, "FE")) //cmd where sector
       {/*** Flash Erase ***/
-        uint32_t sector = strtol(arg2, NULL, 16);
         if(arg1[0]=='I')
         {
-
+          uint32_t sector = strtol(arg2, NULL, 16);
           if(sector <= BTLDR_FLASH_LAST_SECTOR)
           {
             strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
@@ -655,11 +648,27 @@ void UsbParser(char *request)
         }
         else if(arg1[0]=='E')
         {
-          uint8_t chip_status = Mx25Erase64kBlock(sector);
-          if(chip_status == MX25_OK)
-            strcpy(USB_UART_TxBuffer,"OK");
+          uint32_t address = strtol(arg2, NULL, 16);
+          if((address & EXT_FLASH_BASE_ADDR) == EXT_FLASH_BASE_ADDR)
+          {
+            address &= ~EXT_FLASH_BASE_ADDR;
+            if(address < EXT_FLASH_SIZE - 1)
+            {
+              uint8_t chip_status = Mx25Erase64kBlock(address);
+              if(chip_status == MX25_OK)
+                strcpy(USB_UART_TxBuffer,"OK");
+              else
+                sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+            }
+            else
+            {
+              strcpy(USB_UART_TxBuffer,"ERROR: YOU TRY TO ERASE OUT OF EXT FLASH AREA!");
+            }
+          }
           else
-            sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+          {
+            strcpy(USB_UART_TxBuffer,"ERROR: TRY TO ERASE NOT EXT FLASH AREA!");
+          }
         }
       }
       else if(!strcmp(cmd, "FR")) //cmd addr size
@@ -668,9 +677,9 @@ void UsbParser(char *request)
         uint16_t bsize = strtol(arg2, NULL, 16);
         if(bsize > 256)
           strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
-        if((address & 0x10000000) ==  0x10000000)
+        if((address & EXT_FLASH_BASE_ADDR) ==  EXT_FLASH_BASE_ADDR)
         {
-          address &= ~0x10000000;
+          address &= ~EXT_FLASH_BASE_ADDR;
           Mx25Read(address, data, bsize);
         }
         else if ((address & 0x08000000) ==  0x08000000)
@@ -707,7 +716,6 @@ void UsbParser(char *request)
         else
         {
           strcpy(USB_UART_TxBuffer, "OK");
-
           StringArrayToBytes(arg3, data, bsize);
           uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
           if(crc != clacCrc)
@@ -716,10 +724,10 @@ void UsbParser(char *request)
           }
           else
           {
-            if((address & 0x10000000) ==  0x10000000)
+            if((address & EXT_FLASH_BASE_ADDR) ==  EXT_FLASH_BASE_ADDR)
             {
-              address &= ~0x10000000;
-              if(address + bsize > EXT_FLASH_END_ADDR)
+              address &= ~EXT_FLASH_BASE_ADDR;
+              if(address + bsize > EXT_FLASH_SIZE - 1)
               {
                 strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF EXT FLASH AREA!"); //TESTED
               }
