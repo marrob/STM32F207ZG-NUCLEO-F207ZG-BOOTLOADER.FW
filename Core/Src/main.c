@@ -38,6 +38,7 @@ typedef struct _AppTypeDef
   {
     uint32_t UsbUartErrorCnt;
     uint32_t UsbUartResponseCnt;
+    uint32_t LastAddress;
   }Diag;
 /*
   char FW[DEVICE_FW_SIZE];
@@ -58,13 +59,17 @@ typedef void (*pFunction)(void);
 /* USER CODE BEGIN PD */
 
 #define INT_FLASH_BASE_ADDR       0x08000000 //thumb address...
-#define APP_FLASH_SIZE            0x100000 - 0x40000 //-> 768KB
+
+#define APP_FLASH_FIRST_SECTOR    6
+#define APP_FLASH_LAST_SECTOR     11
+#define APP_FLASH_SIZE            0x100000-0x40000 //->786432byte 768KB
+
 #define BTLDR_SIZE                0x40000
 #define BTLDR_FLASH_LAST_SECTOR   5 // 5 is the booloader
 #define EXT_FLASH_BASE_ADDR       0x10000000
 #define EXT_FLASH_SIZE            0x02000000 //last address is 0x01FFFFFF
 
-#define APP_FLASH_START_ADDR      INT_FLASH_BASE_ADDR + BTLDR_SIZE - 1
+#define APP_FLASH_START_ADDR      INT_FLASH_BASE_ADDR + BTLDR_SIZE //0x08040000
 
 
 #define BTLDR_WAIT_FOR_FW_UPDATE  1000
@@ -618,13 +623,18 @@ void UsbParser(char *request)
       if(arg1[0]=='I')
       {
         uint32_t sector = strtol(arg2, NULL, 16);
-        if(sector <= BTLDR_FLASH_LAST_SECTOR)
+
+        if(sector > APP_FLASH_LAST_SECTOR)
+        {
+          strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE OUT OF APP FLASH SECTOR!");
+        }
+        else if(sector <= BTLDR_FLASH_LAST_SECTOR)
         {
           strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
         }
         else
         {
-          uint32_t erase_status = FlashSectorErase(sector,1);
+          uint32_t erase_status = FlashSectorErase(sector, 1);
           if(erase_status == 0xFFFFFFFF)
             strcpy(USB_UART_TxBuffer,"OK");
           else
@@ -662,7 +672,7 @@ void UsbParser(char *request)
       else if (arg1[0]=='I')
       {
         for(uint16_t i = 0; i < bsize; i++)
-          data[i] = *(__IO uint8_t*)(address + i);
+          data[i] = *(__IO uint8_t*)(INT_FLASH_BASE_ADDR + BTLDR_SIZE + address + i);
       }
       else
       {
@@ -673,14 +683,14 @@ void UsbParser(char *request)
       BytesToHexaString(data, arg3, bsize);
       sprintf(USB_UART_TxBuffer,"%08lX %02X %s %04X", address, bsize, arg3, crc ); //addr size data crc
     }
-    else if(!strcmp(cmd, "FP"))
-    {/*** Flash Program ***/
+    else if(!strcmp(cmd, "FW"))
+    {/*** Flash Write ***/
       sscanf(request, "%s %s %s %s %s %s", cmd, arg1, arg2, arg3, arg4, arg5); //cmd ext/int addr bsize data crc
       uint32_t status = 0;
       uint32_t address = strtol(arg2, NULL, 16);
+      Device.Diag.LastAddress = address;
       uint16_t bsize = strtol(arg3, NULL, 16);
       uint16_t crc = strtol(arg5, NULL, 16);
-
       if(strlen(arg4) != bsize * 2) //e.g: 010203 -> bsize = 3
       {
         strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA SIZE IS INVALID!"); //TESTED
@@ -716,24 +726,17 @@ void UsbParser(char *request)
           }
           else if(arg1[0]=='I')
           {
-            if(address < BTLDR_SIZE)
+            if(address + bsize > APP_FLASH_SIZE - 1)
             {
-              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE BOOTLOADER AREA!"); //TESTED
+              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
             }
             else
             {
-              if(address + bsize > APP_FLASH_SIZE - 1)
-              {
-                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
-              }
+              status = FlashProgram(address + INT_FLASH_BASE_ADDR + BTLDR_SIZE, data, bsize);
+              if(status != HAL_FLASH_ERROR_NONE)
+                sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
               else
-              {
-                status = FlashProgram(address + INT_FLASH_BASE_ADDR, data, bsize);
-                if(status != HAL_FLASH_ERROR_NONE)
-                  sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
-                else
-                  strcpy(USB_UART_TxBuffer, "OK");
-              }
+                strcpy(USB_UART_TxBuffer, "OK");
             }
           }
         }
@@ -760,7 +763,7 @@ void BootTask(void)
     //DeviceUsrLog("Wait for a client... %d",  counter);
     if(!counter)
     {
-      if (((*(__IO uint32_t*)APP_FLASH_START_ADDR) & 0x2FFE0000 ) == 0x20000000)
+      if (((*(__IO uint32_t*)INT_FLASH_BASE_ADDR + BTLDR_SIZE) & 0x2FFE0000 ) == 0x20000000)
       {
         //DeviceDbgLog("I found a valid firmware!");
         //IWatchdogDeInit();
