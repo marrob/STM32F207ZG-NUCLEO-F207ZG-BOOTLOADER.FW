@@ -511,12 +511,12 @@ void UsbTxTask(void)
 
 void UsbParser(char *request)
 {
-  uint8_t spaces = 0;
   static char cmd[USB_CMD_LENGTH];
   static char arg1[USB_ARG1_LENGTH];
   static char arg2[USB_ARG2_LENGTH];
   static char arg3[USB_ARG3_LENGTH];
   static char arg4[USB_ARG4_LENGTH];
+  static char arg5[USB_ARG4_LENGTH];
   static uint8_t data[256];
 
   memset(cmd,0x00, sizeof(cmd));
@@ -529,258 +529,222 @@ void UsbParser(char *request)
   if(strlen(USB_UART_RxBuffer) !=0)
   {
     memset(USB_UART_TxBuffer, 0x00, sizeof(USB_UART_TxBuffer));
-    spaces = SpaceCount(USB_UART_RxBuffer);
-    if(spaces == 0)
-    {
-      sscanf(request, "%s", cmd);
-      /*** parameterless commands ***/
-      if(!strcmp(cmd, "*OPC?"))
-      {
-        strcpy(USB_UART_TxBuffer, "*OPC");
-      }
-      else if(!strcmp(cmd, "*RDY?"))
-      {
-        strcpy(USB_UART_TxBuffer, "*RDY");
-      }
-      else if(!strcmp(cmd, "*WHOIS?"))
-      {
-        strcpy(USB_UART_TxBuffer, DEVICE_NAME); //TESTED
-      }
-      else if(!strcmp(cmd, "*VER?"))
-      {
-        strcpy(USB_UART_TxBuffer, DEVICE_FW); //TESTED
-      }
-      else if(!strcmp(cmd, "*UID?"))
-      {
-        sprintf(USB_UART_TxBuffer, "%4lX%4lX%4lX",HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2());
-      }
-      else if(!strcmp(cmd,"UPTIME?"))
-      {
-        sprintf(USB_UART_TxBuffer, "%lld", Device.UpTimeSec);
-      }
-      else if(!strcmp(cmd,"FW-UPDATE"))
-      {
-        Device.IsFwUpdateMode = 1;
-        strcpy(USB_UART_TxBuffer, "OK");
-      }
+    sscanf(request, "%s", cmd);
 
-      else
-      {
-        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
-      }
-    }
-    else if(spaces == 1)
+    /*** parameterless commands ***/
+    if(!strcmp(cmd, "*OPC?"))
     {
+      strcpy(USB_UART_TxBuffer, "*OPC");
+    }
+    else if(!strcmp(cmd, "*RDY?"))
+    {
+      strcpy(USB_UART_TxBuffer, "*RDY");
+    }
+    else if(!strcmp(cmd, "*WHOIS?"))
+    {
+      strcpy(USB_UART_TxBuffer, DEVICE_NAME); //TESTED
+    }
+    else if(!strcmp(cmd, "*VER?"))
+    {
+      strcpy(USB_UART_TxBuffer, DEVICE_FW); //TESTED
+    }
+    else if(!strcmp(cmd, "*UID?"))
+    {
+      sprintf(USB_UART_TxBuffer, "%4lX%4lX%4lX",HAL_GetUIDw0(), HAL_GetUIDw1(), HAL_GetUIDw2());
+    }
+    else if(!strcmp(cmd,"UPTIME?"))
+    {
+      sprintf(USB_UART_TxBuffer, "%lld", Device.UpTimeSec);
+    }
+    else if(!strcmp(cmd,"FW-UPDATE"))
+    {
+      Device.IsFwUpdateMode = 1;
+      strcpy(USB_UART_TxBuffer, "OK");
+    }
+    else if(!strcmp(cmd, "FL"))
+    {/*** Flash Lock ***/
       sscanf(request, "%s %s", cmd, arg1);
-
-      if(!strcmp(cmd, "FL"))
-      {/*** Flash Lock ***/
-        if(arg1[0]=='I')
-        {
-           if(HAL_FLASH_Lock() != HAL_OK)
-             strcpy(USB_UART_TxBuffer, "!INT LOCK ERROR");
-           else
-             strcpy(USB_UART_TxBuffer, "OK");
-        }
-        else if(arg1[0]=='E')
-        {
-          strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
-        }
-      }
-      else if(!strcmp(cmd, "FU"))
-      {/*** Flash Unlock ***/
-        if(arg1[0]=='I')
-        {
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
-          __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
-          if(HAL_FLASH_Unlock() != HAL_OK)
-            strcpy(USB_UART_TxBuffer, "!INT FLASH UNLOCK ERROR");
-          else
-            strcpy(USB_UART_TxBuffer, "OK");
-        }
-        else if(arg1[0]=='E')
-        {
-          strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
-        }
-      }
-      else if(!strcmp(cmd,"FB"))
-      {/*** Flash Is Busy ***/
-        if(arg1[0]=='I')
-        {
-
-        }
-        else if(arg1[0]=='E')
-        {
-          if(Mx25WritInProcess()== MX25_OK)
-            strcpy(USB_UART_TxBuffer, "FREE"); //TESTED
-          else
-            strcpy(USB_UART_TxBuffer, "BUSY");
-        }
-      }
-      else
+      if(arg1[0]=='I')
       {
-        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
+         if(HAL_FLASH_Lock() != HAL_OK)
+           strcpy(USB_UART_TxBuffer, "!INT LOCK ERROR");
+         else
+           strcpy(USB_UART_TxBuffer, "OK");
+      }
+      else if(arg1[0]=='E')
+      {
+        strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
       }
     }
-    else if(spaces == 2)
-    {
-      sscanf(request, "%s %s %s", cmd, arg1, arg2);
-      if(!strcmp(cmd, "FE")) //cmd where sector
-      {/*** Flash Erase ***/
-        if(arg1[0]=='I')
-        {
-          uint32_t sector = strtol(arg2, NULL, 16);
-          if(sector <= BTLDR_FLASH_LAST_SECTOR)
-          {
-            strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
-          }
-          else
-          {
-            uint32_t erase_status = FlashSectorErase(sector,1);
-            if(erase_status == 0xFFFFFFFF)
-              strcpy(USB_UART_TxBuffer,"OK");
-            else
-              printf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
-          }
-        }
-        else if(arg1[0]=='E')
-        {
-          uint32_t address = strtol(arg2, NULL, 16);
-          if((address & EXT_FLASH_BASE_ADDR) == EXT_FLASH_BASE_ADDR)
-          {
-            address &= ~EXT_FLASH_BASE_ADDR;
-            if(address < EXT_FLASH_SIZE - 1)
-            {
-              uint8_t chip_status = Mx25Erase64kBlock(address);
-              if(chip_status == MX25_OK)
-                strcpy(USB_UART_TxBuffer,"OK");
-              else
-                sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
-            }
-            else
-            {
-              strcpy(USB_UART_TxBuffer,"ERROR: YOU TRY TO ERASE OUT OF EXT FLASH AREA!");
-            }
-          }
-          else
-          {
-            strcpy(USB_UART_TxBuffer,"ERROR: TRY TO ERASE NOT EXT FLASH AREA!");
-          }
-        }
-      }
-      else if(!strcmp(cmd, "FR")) //cmd addr size
-      {/*** Flash Read ***/
-        uint32_t address = strtol(arg1, NULL, 16);
-        uint16_t bsize = strtol(arg2, NULL, 16);
-        if(bsize > 256)
-          strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
-        if((address & EXT_FLASH_BASE_ADDR) ==  EXT_FLASH_BASE_ADDR)
-        {
-          address &= ~EXT_FLASH_BASE_ADDR;
-          Mx25Read(address, data, bsize);
-        }
-        else if ((address & INT_FLASH_BASE_ADDR) == INT_FLASH_BASE_ADDR)
-        {
-          for(uint16_t i = 0; i < bsize; i++)
-            data[i] = *(__IO uint8_t*)(address + i);
-        }
-        else
-        {
-          strcpy(USB_UART_TxBuffer, "!ADDRESS ERROR");
-        }
-        uint16_t crc = CalcCrc16Ansi(0, data, bsize);
-        memset(arg3, 0, sizeof(arg3));
-        BytesToHexaString(data, arg3, bsize);
-        sprintf(USB_UART_TxBuffer,"%08lX %02X %s %04X", address, bsize, arg3, crc ); //addr size data crc
-      }
-      else
+    else if(!strcmp(cmd, "FU"))
+    {/*** Flash Unlock ***/
+      sscanf(request, "%s %s", cmd, arg1);
+      if(arg1[0]=='I')
       {
-        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
-      }
-    }
-    else if(spaces == 4)
-    {
-      sscanf(request, "%s %s %s %s %s", cmd, arg1, arg2, arg3, arg4); //cmd addr bsize data crc
-      if(!strcmp(cmd, "FP"))
-      {/*** Flash Program ***/
-        uint32_t status = 0;
-        uint32_t address = strtol(arg1, NULL, 16);
-        uint16_t bsize = strtol(arg2, NULL, 16);
-        uint16_t crc = strtol(arg4, NULL, 16);
-        strcpy(USB_UART_TxBuffer, "OK");
-        if(strlen(arg3) != bsize * 2) //e.g: 010203 -> bsize = 3
-          strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA SIZE IS INVALID!"); //TESTED
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_EOP);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_OPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_WRPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGAERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGPERR);
+        __HAL_FLASH_CLEAR_FLAG(FLASH_FLAG_PGSERR);
+        if(HAL_FLASH_Unlock() != HAL_OK)
+          strcpy(USB_UART_TxBuffer, "!INT FLASH UNLOCK ERROR");
         else
-        {
           strcpy(USB_UART_TxBuffer, "OK");
-          StringArrayToBytes(arg3, data, bsize);
-          uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
-          if(crc != clacCrc)
-          {
-            strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA HAS INVALID CRC!"); //TESTED
-          }
+      }
+      else if(arg1[0]=='E')
+      {
+        strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
+      }
+    }
+    else if(!strcmp(cmd,"FB"))
+    {/*** Flash Is Busy ***/
+      sscanf(request, "%s %s", cmd, arg1);
+      if(arg1[0]=='I')
+      {
+
+      }
+      else if(arg1[0]=='E')
+      {
+        if(Mx25WritInProcess()== MX25_OK)
+          strcpy(USB_UART_TxBuffer, "FREE"); //TESTED
+        else
+          strcpy(USB_UART_TxBuffer, "BUSY");
+      }
+    }
+    else if(!strcmp(cmd, "FE")) //cmd where sector
+    {/*** Flash Erase ***/
+      sscanf(request, "%s %s %s", cmd, arg1, arg2);
+      if(arg1[0]=='I')
+      {
+        uint32_t sector = strtol(arg2, NULL, 16);
+        if(sector <= BTLDR_FLASH_LAST_SECTOR)
+        {
+          strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
+        }
+        else
+        {
+          uint32_t erase_status = FlashSectorErase(sector,1);
+          if(erase_status == 0xFFFFFFFF)
+            strcpy(USB_UART_TxBuffer,"OK");
           else
+            printf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
+        }
+      }
+      else if(arg1[0]=='E')
+      {
+        uint32_t address = strtol(arg2, NULL, 16);
+        if(address < EXT_FLASH_SIZE - 1)
+        {
+          uint8_t chip_status = Mx25Erase64kBlock(address);
+          if(chip_status == MX25_OK)
+            strcpy(USB_UART_TxBuffer,"OK");
+          else
+            sprintf(USB_UART_TxBuffer,"!ERASE ERROR: %hhX", chip_status);
+        }
+        else
+        {
+          strcpy(USB_UART_TxBuffer,"ERROR: YOU TRY TO ERASE OUT OF EXT FLASH AREA!");
+        }
+      }
+    }
+    else if(!strcmp(cmd, "FR")) //cmd ext/int addr size
+    {/*** Flash Read ***/
+      sscanf(request, "%s %s %s %s", cmd, arg1, arg2, arg3);
+      uint32_t address = strtol(arg2, NULL, 16);
+      uint16_t bsize = strtol(arg3, NULL, 16);
+      if(bsize > 256)
+        strcpy(USB_UART_TxBuffer, "!SIZE ERROR");
+      if(arg1[0]=='E')
+      {
+        Mx25Read(address, data, bsize);
+      }
+      else if (arg1[0]=='I')
+      {
+        for(uint16_t i = 0; i < bsize; i++)
+          data[i] = *(__IO uint8_t*)(address + i);
+      }
+      else
+      {
+        strcpy(USB_UART_TxBuffer, "!ADDRESS ERROR");
+      }
+      uint16_t crc = CalcCrc16Ansi(0, data, bsize);
+      memset(arg3, 0, sizeof(arg3));
+      BytesToHexaString(data, arg3, bsize);
+      sprintf(USB_UART_TxBuffer,"%08lX %02X %s %04X", address, bsize, arg3, crc ); //addr size data crc
+    }
+    else if(!strcmp(cmd, "FP"))
+    {/*** Flash Program ***/
+      sscanf(request, "%s %s %s %s %s %s", cmd, arg1, arg2, arg3, arg4, arg5); //cmd ext/int addr bsize data crc
+      uint32_t status = 0;
+      uint32_t address = strtol(arg2, NULL, 16);
+      uint16_t bsize = strtol(arg3, NULL, 16);
+      uint16_t crc = strtol(arg5, NULL, 16);
+
+      if(strlen(arg4) != bsize * 2) //e.g: 010203 -> bsize = 3
+      {
+        strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA SIZE IS INVALID!"); //TESTED
+      }
+      else
+      {
+        StringArrayToBytes(arg4, data, bsize);
+        uint16_t clacCrc = CalcCrc16Ansi(0, data, bsize);
+        if(crc != clacCrc)
+        {
+          strcpy(USB_UART_TxBuffer, "ERROR: RECEIVED DATA HAS INVALID CRC!"); //TESTED
+        }
+        else
+        {
+          if(arg1[0]=='E')
           {
-            if((address & EXT_FLASH_BASE_ADDR) ==  EXT_FLASH_BASE_ADDR)
+            if(address + bsize > EXT_FLASH_SIZE - 1)
             {
-              address &= ~EXT_FLASH_BASE_ADDR;
-              if(address + bsize > EXT_FLASH_SIZE - 1)
+              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF EXT FLASH AREA!"); //TESTED
+            }
+            else
+            {
+              status = Mx25PageProgram(address, data, bsize);
+              if(status == MX25_WRITE_IN_PROCESS)
+                strcpy(USB_UART_TxBuffer, "ERROR: WRITE IN PROCESS, PLEASE WAIT!");
+              else if (status == MX25_NOT_ALIGNED)
+                strcpy(USB_UART_TxBuffer, "ERROR: NOT ALIGNED!"); //TESTED
+              else if(status == MX25_NOT_WRITE_ENALBE)
+                strcpy(USB_UART_TxBuffer, "ERROR: NOT WRITE ENABLE!");
+              else
+                strcpy(USB_UART_TxBuffer, "OK");
+            }
+          }
+          else if(arg1[0]=='I')
+          {
+            if(address < BTLDR_SIZE)
+            {
+              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE BOOTLOADER AREA!"); //TESTED
+            }
+            else
+            {
+              if(address + bsize > APP_FLASH_SIZE - 1)
               {
-                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF EXT FLASH AREA!"); //TESTED
+                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
               }
               else
               {
-                status = Mx25PageProgram(address, data, bsize);
-                if(status == MX25_WRITE_IN_PROCESS)
-                  strcpy(USB_UART_TxBuffer, "ERROR: WRITE IN PROCESS, PLEASE WAIT!");
-                else if (status == MX25_NOT_ALIGNED)
-                  strcpy(USB_UART_TxBuffer, "ERROR: NOT ALIGNED!"); //TESTED
-                else if(status == MX25_NOT_WRITE_ENALBE)
-                  strcpy(USB_UART_TxBuffer, "ERROR: NOT WRITE ENABLE!");
+                status = FlashProgram(address + INT_FLASH_BASE_ADDR, data, bsize);
+                if(status != HAL_FLASH_ERROR_NONE)
+                  sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
                 else
                   strcpy(USB_UART_TxBuffer, "OK");
               }
             }
-            else if ((address & INT_FLASH_BASE_ADDR) == INT_FLASH_BASE_ADDR)
-            {
-              if(address < INT_FLASH_BASE_ADDR + BTLDR_SIZE)
-              {
-                strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE BOOTLOADER AREA!"); //TESTED
-              }
-              else
-              {
-                if(address + bsize > INT_FLASH_BASE_ADDR + APP_FLASH_SIZE)
-                {
-                  strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
-                }
-                else
-                {
-                  status = FlashProgram(address, data, bsize);
-                  if(status != HAL_FLASH_ERROR_NONE)
-                    sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
-                  else
-                    strcpy(USB_UART_TxBuffer, "OK");
-                }
-              }
-            }
-            else
-            {
-              strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE INVALID ADDRESS!"); //TESTED
-            }
           }
         }
       }
-      else
-      {
-        strcpy(USB_UART_TxBuffer, "!UNKNOWN");
-      }
     }
-    strcat(USB_UART_TxBuffer,"\n");
+    else
+    {
+      strcpy(USB_UART_TxBuffer, "!UNKNOWN");
+    }
   }
+    strcat(USB_UART_TxBuffer,"\n");
 }
 
 
