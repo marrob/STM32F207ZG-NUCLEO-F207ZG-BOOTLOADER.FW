@@ -47,9 +47,10 @@ typedef struct _AppTypeDef
   */
   uint32_t BootUpCnt;
   uint64_t UpTimeSec;
-  uint8_t IsFwUpdateMode;
-
+  uint8_t IsDfuMode;
+  uint8_t SystemRestartPending;
   uint16_t FlashId;
+  uint8_t AppStartDelayCnt;
 }Device_t;
 
 typedef void (*pFunction)(void);
@@ -69,10 +70,11 @@ typedef void (*pFunction)(void);
 #define EXT_FLASH_BASE_ADDR       0x10000000
 #define EXT_FLASH_SIZE            0x02000000 //last address is 0x01FFFFFF
 
-#define APP_FLASH_START_ADDR      INT_FLASH_BASE_ADDR + BTLDR_SIZE //0x08040000
+#define APP_ADDR                  (INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
 
 
-#define BTLDR_WAIT_FOR_FW_UPDATE  1000
+#define BTLDR_DELAY_APP_START_SEC  4
+#define BTLDR_RESET_DELAY_MS       500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -124,9 +126,8 @@ uint8_t SpaceCount(char *str);
 void StringArrayToBytes(char *str, uint8_t *data, uint16_t bsize);
 void BytesToHexaString(uint8_t *data, char *dest, uint16_t bsize);
 uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size);
-
+void RestartTask(void);
 void BootTask(void);
-
 
 /*** Flash ***/
 uint32_t FlashSectorErase(uint8_t start, uint8_t number);
@@ -181,7 +182,8 @@ int main(void)
   LiveLedInit(&hLiveLed);
 
   /*** Defaults ***/
-  Device.IsFwUpdateMode = 0;
+  Device.IsDfuMode = 0;
+  Device.AppStartDelayCnt = BTLDR_DELAY_APP_START_SEC;
 
   Mx25Init(&hspi1);
   Mx25ReadId(&Device.FlashId);
@@ -194,11 +196,10 @@ int main(void)
   {
     LiveLedTask(&hLiveLed);
     UpTimeTask();
-
+    RestartTask();
+    BootTask();
     UsbRxTask();
     UsbTxTask();
-
-    //BootTask();
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -561,9 +562,14 @@ void UsbParser(char *request)
     {
       sprintf(USB_UART_TxBuffer, "%lld", Device.UpTimeSec);
     }
-    else if(!strcmp(cmd,"FW-UPDATE"))
+    else if(!strcmp(cmd,"RST"))
     {
-      Device.IsFwUpdateMode = 1;
+      Device.SystemRestartPending = 1;
+      strcpy(USB_UART_TxBuffer, "OK");
+    }
+    else if(!strcmp(cmd,"DFU"))
+    {
+      Device.IsDfuMode = 1;
       strcpy(USB_UART_TxBuffer, "OK");
     }
     else if(!strcmp(cmd, "FL"))
@@ -754,35 +760,27 @@ void UsbParser(char *request)
 void BootTask(void)
 {
   static uint32_t timestamp = 0;
-  static uint16_t counter = BTLDR_WAIT_FOR_FW_UPDATE;
-  if( HAL_GetTick() - timestamp > 1000 && !Device.IsFwUpdateMode)
+
+  if( HAL_GetTick() - timestamp > 1000 && !Device.IsDfuMode)
   {
     timestamp = HAL_GetTick();
-    counter--;
-
-    //DeviceUsrLog("Wait for a client... %d",  counter);
-    if(!counter)
+    Device.AppStartDelayCnt--;
+    if(!Device.AppStartDelayCnt)
     {
-      if (((*(__IO uint32_t*)INT_FLASH_BASE_ADDR + BTLDR_SIZE) & 0x2FFE0000 ) == 0x20000000)
+      if (((*(__IO uint32_t*)APP_ADDR) & 0x2FFE0000 ) == 0x20000000)
       {
-        //DeviceDbgLog("I found a valid firmware!");
         //IWatchdogDeInit();
         HAL_DeInit();
         HAL_UART_MspDeInit(&husb);
         HAL_SPI_MspDeInit(&hspi1);
-
-        uint32_t appAddress = *(__IO uint32_t*) (APP_FLASH_START_ADDR + 4);
-        /* Jump to user application */
+        uint32_t appAddress = *(__IO uint32_t*) (APP_ADDR + 4);
         pFunction pApp = (pFunction) appAddress;
-        /* Initialize user application's Stack Pointer */
-        __set_MSP(*(__IO uint32_t*) APP_FLASH_START_ADDR);
-
+        __set_MSP(*(__IO uint32_t*) APP_ADDR);
         pApp();
       }
       else
       {
-        //DeviceUsrLog("There is nothing");
-        counter = BTLDR_WAIT_FOR_FW_UPDATE;
+        Device.AppStartDelayCnt = BTLDR_DELAY_APP_START_SEC;
       }
     }
   }
@@ -850,6 +848,23 @@ uint16_t CalcCrc16Ansi(uint16_t initValue, const void* address, size_t size)
     }
   }
   return (remainder);
+}
+
+void RestartTask(void)
+{
+  static uint32_t timestamp;
+
+  if(Device.SystemRestartPending)
+  {
+    if(HAL_GetTick() - timestamp > BTLDR_RESET_DELAY_MS)
+    {
+      NVIC_SystemReset();
+    }
+  }
+  else
+  {
+    timestamp = HAL_GetTick();
+  }
 }
 
 /* LEDs ---------------------------------------------------------------------*/
