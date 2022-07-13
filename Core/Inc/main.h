@@ -50,10 +50,10 @@ extern "C" {
 #define DEVICE_OK             0
 #define DEVICE_FAIL           1
 
-#define DEVICE_NAME           "BOOTLOADER"
-#define DEVICE_FW             "220629_1834"
-#define DEVICE_PCB            "VA01"
-#define DEVICE_MNF            "KONVOLUCIO"
+#define DEVICE_NAME          "BOOTLOADER"
+#define DEVICE_FW            "220629_1834"
+#define DEVICE_PCB           "VA01"
+#define DEVICE_MNF           "KONVOLUCIO"
 #define DEVICE_MNF_SIZE       sizeof(DEVICE_MNF)
 
 #define USB_BUFFER_SIZE     700

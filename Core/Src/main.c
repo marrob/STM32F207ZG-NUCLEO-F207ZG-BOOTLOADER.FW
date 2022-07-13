@@ -76,13 +76,13 @@ UART_HandleTypeDef huart3;
 DMA_HandleTypeDef hdma_usart3_rx;
 
 /* USER CODE BEGIN PV */
+#define husb huart3
+#define hextflash hspi1
+
 LiveLED_HnadleTypeDef hLiveLed;
 Device_t Device;
-
 static char USB_UART_RxBuffer[USB_BUFFER_SIZE];
 static char USB_UART_TxBuffer[USB_BUFFER_SIZE];
-#define husb huart3
-
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -165,7 +165,7 @@ int main(void)
   Device.IsDfuMode = 0;
   Device.AppStartDelayCnt = BTLDR_DELAY_APP_START_SEC;
 
-  Mx25Init(&hspi1);
+  Mx25Init(&hextflash);
   Mx25ReadId(&Device.FlashId);
 
   /* USER CODE END 2 */
@@ -674,7 +674,7 @@ void BootTask(void)
         //IWatchdogDeInit();
         HAL_DeInit();
         HAL_UART_MspDeInit(&husb);
-        HAL_SPI_MspDeInit(&hspi1);
+        HAL_SPI_MspDeInit(&hextflash);
         HAL_RCC_DeInit();
 
         uint32_t appAddress = *(__IO uint32_t*) (APP_ADDR + 4);
