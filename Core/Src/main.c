@@ -158,7 +158,7 @@ int main(void)
   /*** LiveLed ***/
   hLiveLed.LedOffFnPtr = &LiveLedOff;
   hLiveLed.LedOnFnPtr = &LiveLedOn;
-  hLiveLed.HalfPeriodTimeMs = 125;
+  hLiveLed.HalfPeriodTimeMs = 100;
   LiveLedInit(&hLiveLed);
 
   /*** Defaults ***/
