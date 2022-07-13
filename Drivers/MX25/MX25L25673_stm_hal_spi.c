@@ -6,10 +6,12 @@
  */
 
 /* Includes ------------------------------------------------------------------*/
+
+
 #include "main.h"
-#include <MX25L25673_stm_hal.h>
 #include "stdio.h"
 #include <string.h>
+#include "MX25L25673_stm_hal_spi.h"
 
 static SPI_HandleTypeDef *_spi;
 static inline void Mx25ChipEnable(uint8_t state);

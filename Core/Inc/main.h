@@ -33,7 +33,6 @@ extern "C" {
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "LiveLed.h"
-#include "vt100.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

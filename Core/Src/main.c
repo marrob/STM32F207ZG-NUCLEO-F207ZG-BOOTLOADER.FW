@@ -25,7 +25,7 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
-#include <MX25L25673_stm_hal.h>
+#include "MX25L25673_stm_hal_spi.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -38,11 +38,6 @@ typedef struct _AppTypeDef
     uint32_t UsbUartResponseCnt;
     uint32_t LastAddress;
   }Diag;
-/*
-  char FW[DEVICE_FW_SIZE];
-  char UID[DEVICE_UID_SIZE];
-  char PCB[DEVICE_PCB_SIZE];
-  */
   uint32_t BootUpCnt;
   uint64_t UpTimeSec;
   uint8_t IsDfuMode;
@@ -56,23 +51,17 @@ typedef void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-
-#define INT_FLASH_BASE_ADDR       0x08000000 //thumb address...
-
-#define APP_FLASH_FIRST_SECTOR    6
-#define APP_FLASH_LAST_SECTOR     11
-#define APP_FLASH_SIZE            0x100000-0x40000 //->786432byte 768KB
-
-#define BTLDR_SIZE                0x40000
-#define BTLDR_FLASH_LAST_SECTOR   5 // 5 is the booloader
-#define EXT_FLASH_BASE_ADDR       0x10000000
-#define EXT_FLASH_SIZE            0x02000000 //last address is 0x01FFFFFF
-
-#define APP_ADDR                  0x08040000//(INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
-
-
-#define BTLDR_DELAY_APP_START_SEC  4
-#define BTLDR_RESET_DELAY_MS       500
+#define INT_FLASH_BASE_ADDR         0x08000000 //thumb address...
+#define APP_FLASH_FIRST_SECTOR      6
+#define APP_FLASH_LAST_SECTOR       11
+#define APP_FLASH_SIZE              0x100000-0x40000 //->786432byte 768KB
+#define BTLDR_SIZE                  0x40000
+#define BTLDR_FLASH_LAST_SECTOR     5 // 5 is the booloader
+#define EXT_FLASH_BASE_ADDR         0x10000000
+#define EXT_FLASH_SIZE              0x02000000 //last address is 0x01FFFFFF
+#define APP_ADDR                    0x08040000//(INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
+#define BTLDR_DELAY_APP_START_SEC   4
+#define BTLDR_RESET_DELAY_MS        500
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
