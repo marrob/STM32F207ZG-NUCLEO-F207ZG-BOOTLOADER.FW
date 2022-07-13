@@ -37,11 +37,13 @@ typedef struct _AppTypeDef
     uint32_t UsbUartErrorCnt;
     uint32_t UsbUartResponseCnt;
     uint32_t LastAddress;
+
   }Diag;
   uint32_t BootUpCnt;
   uint64_t UpTimeSec;
   uint8_t IsDfuMode;
-  uint8_t SystemRestartPending;
+  uint8_t StartRestartFlag;
+  uint8_t IntFlashCurrentSector;
   uint16_t FlashId;
   uint8_t AppStartDelayCnt;
 }Device_t;
@@ -51,15 +53,14 @@ typedef void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
-#define INT_FLASH_BASE_ADDR         0x08000000 //thumb address...
-#define APP_FLASH_FIRST_SECTOR      6
-#define APP_FLASH_LAST_SECTOR       11
-#define APP_FLASH_SIZE              0x100000-0x40000 //->786432byte 768KB
-#define BTLDR_SIZE                  0x40000
-#define BTLDR_FLASH_LAST_SECTOR     5 // 5 is the booloader
-#define EXT_FLASH_BASE_ADDR         0x10000000
+#define APP_INT_FLASH_FIRST_SECTOR  6
+#define APP_INT_FLASH_LAST_SECTOR   11
+#define APP_INT_FLASH_ADDR          0x08040000//(INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
+#define APP_INT_FLASH_SIZE          0x100000-0x40000 //->786432byte 768KB
+
 #define EXT_FLASH_SIZE              0x02000000 //last address is 0x01FFFFFF
-#define APP_ADDR                    0x08040000//(INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
+
+#define BTLDR_FLASH_SIZE            0x40000
 #define BTLDR_DELAY_APP_START_SEC   4
 #define BTLDR_RESET_DELAY_MS        500
 /* USER CODE END PD */
@@ -112,7 +113,7 @@ void RestartTask(void);
 void BootTask(void);
 
 /*** Flash ***/
-uint32_t FlashSectorErase(uint8_t start, uint8_t number);
+uint32_t FlashSectorErase(uint8_t start);
 uint32_t FlashProgram(uint32_t address, uint8_t *data, uint16_t size);
 
 
@@ -164,6 +165,7 @@ int main(void)
   /*** Defaults ***/
   Device.IsDfuMode = 0;
   Device.AppStartDelayCnt = BTLDR_DELAY_APP_START_SEC;
+  Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
 
   Mx25Init(&hextflash);
   Mx25ReadId(&Device.FlashId);
@@ -466,7 +468,7 @@ void UsbParser(char *request)
     }
     else if(!strcmp(cmd,"RST"))
     {
-      Device.SystemRestartPending = 1;
+      Device.StartRestartFlag = 1;
       strcpy(USB_UART_TxBuffer, "OK");
     }
     else if(!strcmp(cmd,"DFU"))
@@ -515,7 +517,7 @@ void UsbParser(char *request)
       sscanf(request, "%s %s", cmd, arg1);
       if(arg1[0]=='I')
       {
-
+        strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
       }
       else if(arg1[0]=='E')
       {
@@ -525,32 +527,35 @@ void UsbParser(char *request)
           strcpy(USB_UART_TxBuffer, "BUSY");
       }
     }
-    else if(!strcmp(cmd, "FE")) //cmd where sector
+    else if(!strcmp(cmd, "FE")) //cmd where
     {/*** Flash Erase ***/
-      sscanf(request, "%s %s %s", cmd, arg1, arg2);
+      sscanf(request, "%s %s", cmd, arg1);
       if(arg1[0]=='I')
       {
-        uint32_t sector = strtol(arg2, NULL, 16);
-
-        if(sector > APP_FLASH_LAST_SECTOR)
-        {
-          strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE OUT OF APP FLASH SECTOR!");
-        }
-        else if(sector <= BTLDR_FLASH_LAST_SECTOR)
-        {
-          strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO ERASE A BOOTLOADER SECTOR!"); //TESTED
-        }
-        else
-        {
-          uint32_t erase_status = FlashSectorErase(sector, 1);
+          uint32_t erase_status = FlashSectorErase(Device.IntFlashCurrentSector);
           if(erase_status == 0xFFFFFFFF)
-            strcpy(USB_UART_TxBuffer,"OK");
+          {
+            sprintf(USB_UART_TxBuffer,"%d", Device.IntFlashCurrentSector);
+            if(Device.IntFlashCurrentSector >= APP_INT_FLASH_LAST_SECTOR)
+            {
+              Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
+              strcpy(USB_UART_TxBuffer, "OK");
+            }
+            else
+            {
+              Device.IntFlashCurrentSector ++;
+            }
+          }
           else
-            printf(USB_UART_TxBuffer,"!ERASE ERROR: %08lX", erase_status);
-        }
+          {
+            Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
+            printf(USB_UART_TxBuffer,"INT FLASH ERASE ERROR: %08lX!", erase_status);
+          }
       }
       else if(arg1[0]=='E')
       {
+        sscanf(request, "%s %s %s", cmd, arg1, arg2);
+
         uint32_t address = strtol(arg2, NULL, 16);
         if(address < EXT_FLASH_SIZE - 1)
         {
@@ -580,7 +585,7 @@ void UsbParser(char *request)
       else if (arg1[0]=='I')
       {
         for(uint16_t i = 0; i < bsize; i++)
-          data[i] = *(__IO uint8_t*)(INT_FLASH_BASE_ADDR + BTLDR_SIZE + address + i);
+          data[i] = *(__IO uint8_t*)(APP_INT_FLASH_ADDR + address + i);
       }
       else
       {
@@ -634,13 +639,13 @@ void UsbParser(char *request)
           }
           else if(arg1[0]=='I')
           {
-            if(address + bsize > APP_FLASH_SIZE - 1)
+            if(address + bsize > APP_INT_FLASH_SIZE - 1)
             {
               strcpy(USB_UART_TxBuffer, "ERROR: YOU TRY TO WRITE OUT OF APP FLASH AREA!"); //TESTED
             }
             else
             {
-              status = FlashProgram(address + INT_FLASH_BASE_ADDR + BTLDR_SIZE, data, bsize);
+              status = FlashProgram(address + APP_INT_FLASH_ADDR, data, bsize);
               if(status != HAL_FLASH_ERROR_NONE)
                 sprintf(USB_UART_TxBuffer, "%s %08lX", "!INT PROG ERROR", status);
               else
@@ -669,7 +674,7 @@ void BootTask(void)
     Device.AppStartDelayCnt--;
     if(!Device.AppStartDelayCnt)
     {
-      if (((*(__IO uint32_t*)APP_ADDR) & 0x2FFE0000 ) == 0x20000000)
+      if (((*(__IO uint32_t*)APP_INT_FLASH_ADDR) & 0x2FFE0000 ) == 0x20000000)
       {
         //IWatchdogDeInit();
         HAL_DeInit();
@@ -677,10 +682,10 @@ void BootTask(void)
         HAL_SPI_MspDeInit(&hextflash);
         HAL_RCC_DeInit();
 
-        uint32_t appAddress = *(__IO uint32_t*) (APP_ADDR + 4);
+        uint32_t appAddress = *(__IO uint32_t*) (APP_INT_FLASH_ADDR + 4);
         pFunction pApp = (pFunction) appAddress;
 
-        __set_MSP(*(__IO uint32_t*) APP_ADDR);
+        __set_MSP(*(__IO uint32_t*) APP_INT_FLASH_ADDR);
         pApp();
       }
       else
@@ -759,7 +764,7 @@ void RestartTask(void)
 {
   static uint32_t timestamp;
 
-  if(Device.SystemRestartPending)
+  if(Device.StartRestartFlag)
   {
     if(HAL_GetTick() - timestamp > BTLDR_RESET_DELAY_MS)
     {
@@ -792,13 +797,14 @@ int _write(int file, char *ptr, int len)
 
 
 /* Flash ---------------------------------------------------------------------*/
-uint32_t FlashSectorErase(uint8_t start, uint8_t number)
+uint32_t FlashSectorErase(uint8_t sector)
 {
+  //If there was no flash unlock, than that is not error.
   uint32_t sectorError = 0x0;
   FLASH_EraseInitTypeDef hEraseInit;
   hEraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
-  hEraseInit.Sector = start;
-  hEraseInit.NbSectors = number;
+  hEraseInit.Sector = sector;
+  hEraseInit.NbSectors = 1;
   hEraseInit.VoltageRange = FLASH_VOLTAGE_RANGE_3;
   HAL_FLASHEx_Erase(&hEraseInit, &sectorError);
   return sectorError;
