@@ -189,7 +189,7 @@ uint8_t Mx25Erase64kBlock(uint32_t address)
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
-  if(Mx25WritInProcess(MX25_TIMEOUT) != MX25_OK )
+  if(Mx25WritInProcess(MX25_SUBSECTOR_ERASE_MAX_TIME) != MX25_OK )
     return MX25_TIMEOUT_ERROR;
 
   return MX25_OK;
