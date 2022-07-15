@@ -15,6 +15,7 @@
 
 static SPI_HandleTypeDef *_spi;
 static inline void Mx25ChipEnable(uint8_t state);
+static uint8_t Mx25WritInProcess();
 
 #define MX25_CE_LOW   0
 #define MX25_CE_HIGH  1
@@ -68,7 +69,7 @@ uint8_t Mx25ReadId (uint16_t *id)
 {
   /*** RDID - read identification***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, (uint8_t[]){0x9F}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi, (uint8_t[]){MX25_1L_READ_ID_CMD}, 1, MX25_TIMEOUT);
   HAL_SPI_Receive(_spi, (uint8_t*)id, sizeof(uint16_t), MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
   return MX25_OK;
@@ -92,9 +93,6 @@ uint8_t Mx25ReadId (uint16_t *id)
  */
 uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
 {
-  if(Mx25WritInProcess() != MX25_OK )
-    return MX25_WRITE_IN_PROCESS;
-
   if((addr % 256) + size > 256)
     return MX25_NOT_ALIGNED;
 
@@ -102,7 +100,7 @@ uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
 
   /*** PP4B - Page Program***/
   uint8_t cmd[5];
-  cmd[0] = 0x12;
+  cmd[0] = MX25_4B_1L_PP_CMD;
   cmd[1] = addr >> 24;
   cmd[2] = addr >> 16;
   cmd[3] = addr >> 8;
@@ -112,6 +110,9 @@ uint8_t Mx25PageProgram(uint32_t addr, uint8_t *data, uint32_t size)
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   HAL_SPI_Transmit(_spi, data, size, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
+
+  if(Mx25WritInProcess() != MX25_OK)
+    return MX25_TIMEOUT_ERROR;
 
   return MX25_OK;
 }
@@ -132,29 +133,20 @@ uint8_t Mx25WriteEnable(void)
 {
   /*** WREN - Write Enable***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, (uint8_t[]){0x06}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi, (uint8_t[]){MX25_1L_WRITE_EN_CMD}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
   return MX25_OK;
 }
 
-uint8_t Mx25WriteDisable(void)
-{
-  /*** WRDI - Write Disable ***/
-  Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, (uint8_t[]){0x04}, 1, MX25_TIMEOUT);
-  Mx25ChipEnable(MX25_CE_HIGH);
-  return MX25_OK;
-}
-
-uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
+uint8_t Mx25Read(uint32_t address, uint8_t *data, uint32_t size)
 {
   /*** READ4B - Read Data Byte by 4 byte address ***/
   uint8_t cmd[5];
-  cmd[0] = 0x13;
-  cmd[1] = addr >> 24;
-  cmd[2] = addr >> 16;
-  cmd[3] = addr >> 8;
-  cmd[4] = addr;
+  cmd[0] = MX25_4B_1L_READ;
+  cmd[1] = address >> 24;
+  cmd[2] = address >> 16;
+  cmd[3] = address >> 8;
+  cmd[4] = address;
 
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
@@ -168,92 +160,54 @@ uint8_t Mx25Read(uint32_t addr, uint8_t *data, uint32_t size)
  */
 uint8_t Mx25ChipErase(void)
 {
-  if(Mx25WritInProcess() != MX25_OK )
-    return MX25_WRITE_IN_PROCESS;
-
   Mx25WriteEnable();
 
   /*** CE - Chip Erase ***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, (uint8_t[]){0x60}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi, (uint8_t[]){MX25_1L_BULK_ERASE_CMD}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
+
+  if(Mx25WritInProcess(MX25_BULK_ERASE_MAX_TIME) != MX25_OK)
+    return MX25_TIMEOUT_ERROR;
 
   return MX25_OK;
 }
 
-uint8_t Mx25Erase4kSector(uint32_t addr)
+uint8_t Mx25Erase64kBlock(uint32_t address)
 {
-  if(Mx25WritInProcess() != MX25_OK )
-    return MX25_WRITE_IN_PROCESS;
-
-  Mx25WriteEnable();
-
-  /*** SE Sector Erase ***/
-  uint8_t cmd[4];
-  cmd[0] = 0x20;
-  cmd[1] = addr >> 16;
-  cmd[2] = addr >> 8;
-  cmd[3] = addr;
-
-  Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
-  Mx25ChipEnable(MX25_CE_HIGH);
-  return MX25_OK;
-}
-
-uint8_t Mx25Erase32kBlock(uint32_t addr)
-{
-  if(Mx25WritInProcess() != MX25_OK )
-    return MX25_WRITE_IN_PROCESS;
-
-  Mx25WriteEnable();
-
-  /*** BE32K4B Block Erase ***/
-  uint8_t cmd[5];
-  cmd[0] = 0x5C;
-  cmd[1] = addr >> 24;
-  cmd[2] = addr >> 16;
-  cmd[3] = addr >> 8;
-  cmd[4] = addr;
-
-  Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
-  Mx25ChipEnable(MX25_CE_HIGH);
-
-  return MX25_OK;
-}
-
-
-uint8_t Mx25Erase64kBlock(uint32_t addr)
-{
-  if(Mx25WritInProcess() != MX25_OK )
-    return MX25_WRITE_IN_PROCESS;
-
   Mx25WriteEnable();
 
   /*** BE4B Block Erase ***/
   uint8_t cmd[5];
-  cmd[0] = 0xDC;
-  cmd[1] = addr >> 24;
-  cmd[2] = addr >> 16;
-  cmd[3] = addr >> 8;
-  cmd[4] = addr;
+  cmd[0] = MX25_4B_1L_SECTOR_ERASE_CMD;
+  cmd[1] = address >> 24;
+  cmd[2] = address >> 16;
+  cmd[3] = address >> 8;
+  cmd[4] = address;
 
   Mx25ChipEnable(MX25_CE_LOW);
   HAL_SPI_Transmit(_spi, cmd, sizeof(cmd), MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
+  if(Mx25WritInProcess(MX25_TIMEOUT) != MX25_OK )
+    return MX25_TIMEOUT_ERROR;
+
   return MX25_OK;
 }
 
-uint8_t Mx25WritInProcess()
+uint8_t Mx25WritInProcess(uint32_t timeout)
 {
-  uint8_t status = Mx25ReadStatusReg();
-  /*** WIP bit ***/
-  if(status & 0x01)
-    return MX25_WRITE_IN_PROCESS;
-  else
-    return MX25_OK;
+  uint32_t timestamp = HAL_GetTick();
+  uint8_t status = 0;
+  do
+  {
+    status = Mx25ReadStatusReg();
+    if(HAL_GetTick() - timestamp > timeout)
+    return MX25_TIMEOUT;
+    /*** WIP bit ***/
+  }while(status & MX25_SR_WIP);
+
+  return MX25_OK;
 }
 
 uint8_t Mx25ReadStatusReg(void)
@@ -261,36 +215,26 @@ uint8_t Mx25ReadStatusReg(void)
   uint8_t status = 0;
   /*** RDSR - Read Status Register ***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi,(uint8_t[]){0x05}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi,(uint8_t[]){MX25_1L_READ_STATUS_CMD}, 1, MX25_TIMEOUT);
   HAL_SPI_Receive(_spi, &status, sizeof(status), MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
   return status;
 }
-
 
 uint8_t Mx25Reset(void)
 {
   /*** RSTEN Reset Enable ***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi,(uint8_t[]){0x66}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi,(uint8_t[]){MX25_1L_RESET_ENABLE_CMD}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
 
-  /*** RSTEN Reset Enable ***/
+  /*** RST Reset ***/
   Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi,(uint8_t[]){0x99}, 1, MX25_TIMEOUT);
+  HAL_SPI_Transmit(_spi,(uint8_t[]){MX25_1L_RESET_CMD}, 1, MX25_TIMEOUT);
   Mx25ChipEnable(MX25_CE_HIGH);
+
+  if(Mx25WritInProcess(MX25_TIMEOUT) != MX25_OK )
+    return MX25_TIMEOUT_ERROR;
 
   return MX25_OK;
-}
-
-uint8_t Mx25ReadSecurityReg(void)
-{
-  uint8_t status = 0;
-  /*** RDSR - Read Status Register ***/
-  Mx25ChipEnable(MX25_CE_LOW);
-  HAL_SPI_Transmit(_spi,(uint8_t[]){0x2B}, 1, MX25_TIMEOUT);
-  HAL_SPI_Receive(_spi, &status, sizeof(status), MX25_TIMEOUT);
-  Mx25ChipEnable(MX25_CE_HIGH);
-
-  return status;
 }

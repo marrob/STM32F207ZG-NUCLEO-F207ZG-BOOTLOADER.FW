@@ -37,9 +37,7 @@ typedef struct _AppTypeDef
     uint32_t UsbUartErrorCnt;
     uint32_t UsbUartResponseCnt;
     uint32_t LastAddress;
-
   }Diag;
-  uint32_t BootUpCnt;
   uint64_t UpTimeSec;
   uint8_t IsDfuMode;
   uint8_t StartRestartFlag;
@@ -53,16 +51,17 @@ typedef void (*pFunction)(void);
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+/*** STM32F207ZG ***/
 #define APP_INT_FLASH_FIRST_SECTOR  6
 #define APP_INT_FLASH_LAST_SECTOR   11
-#define APP_INT_FLASH_ADDR          0x08040000//(INT_FLASH_BASE_ADDR + BTLDR_SIZE) //0x08040000
-#define APP_INT_FLASH_SIZE          0x100000-0x40000 //->786432byte 768KB
+#define APP_INT_FLASH_ADDR          0x08040000        /*(0x08000000 + BTLDR_FLASH_SIZE)*/
+#define APP_INT_FLASH_SIZE          0x100000-0x40000  /* 0xC0000-> 768kB */
 
-#define EXT_FLASH_SIZE              0x02000000 //last address is 0x01FFFFFF
-
-#define BTLDR_FLASH_SIZE            0x40000
+#define BTLDR_FLASH_SIZE            0x40000 /*0x40000->256kB*/
 #define BTLDR_DELAY_APP_START_SEC   4
 #define BTLDR_RESET_DELAY_MS        500
+
+#define EXT_FLASH_SIZE              0x02000000 //last address is 0x01FFFFFF
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -512,45 +511,30 @@ void UsbParser(char *request)
         strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
       }
     }
-    else if(!strcmp(cmd,"FB"))
-    {/*** Flash Is Busy ***/
-      sscanf(request, "%s %s", cmd, arg1);
-      if(arg1[0]=='I')
-      {
-        strcpy(USB_UART_TxBuffer, "NOT SUPPORTED");
-      }
-      else if(arg1[0]=='E')
-      {
-        if(Mx25WritInProcess()== MX25_OK)
-          strcpy(USB_UART_TxBuffer, "FREE"); //TESTED
-        else
-          strcpy(USB_UART_TxBuffer, "BUSY");
-      }
-    }
     else if(!strcmp(cmd, "FE")) //cmd where
     {/*** Flash Erase ***/
       sscanf(request, "%s %s", cmd, arg1);
       if(arg1[0]=='I')
       {
-          uint32_t erase_status = FlashSectorErase(Device.IntFlashCurrentSector);
-          if(erase_status == 0xFFFFFFFF)
+        uint32_t erase_status = FlashSectorErase(Device.IntFlashCurrentSector);
+        if(erase_status == 0xFFFFFFFF)
+        {
+          sprintf(USB_UART_TxBuffer,"%d", Device.IntFlashCurrentSector);
+          if(Device.IntFlashCurrentSector >= APP_INT_FLASH_LAST_SECTOR)
           {
-            sprintf(USB_UART_TxBuffer,"%d", Device.IntFlashCurrentSector);
-            if(Device.IntFlashCurrentSector >= APP_INT_FLASH_LAST_SECTOR)
-            {
-              Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
-              strcpy(USB_UART_TxBuffer, "OK");
-            }
-            else
-            {
-              Device.IntFlashCurrentSector ++;
-            }
+            Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
+            strcpy(USB_UART_TxBuffer, "OK");
           }
           else
           {
-            Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
-            printf(USB_UART_TxBuffer,"INT FLASH ERASE ERROR: %08lX!", erase_status);
+            Device.IntFlashCurrentSector ++;
           }
+        }
+        else
+        {
+          Device.IntFlashCurrentSector = APP_INT_FLASH_FIRST_SECTOR;
+          printf(USB_UART_TxBuffer,"INT FLASH ERASE ERROR: %08lX!", erase_status);
+        }
       }
       else if(arg1[0]=='E')
       {
@@ -627,8 +611,8 @@ void UsbParser(char *request)
             else
             {
               status = Mx25PageProgram(address, data, bsize);
-              if(status == MX25_WRITE_IN_PROCESS)
-                strcpy(USB_UART_TxBuffer, "ERROR: WRITE IN PROCESS, PLEASE WAIT!");
+              if(status == MX25_TIMEOUT_ERROR)
+                strcpy(USB_UART_TxBuffer, "ERROR: TIMEOUT ERROR!");
               else if (status == MX25_NOT_ALIGNED)
                 strcpy(USB_UART_TxBuffer, "ERROR: NOT ALIGNED!"); //TESTED
               else if(status == MX25_NOT_WRITE_ENALBE)
@@ -681,8 +665,11 @@ void BootTask(void)
         HAL_UART_MspDeInit(&husb);
         HAL_SPI_MspDeInit(&hextflash);
         HAL_RCC_DeInit();
+        SysTick->CTRL = 0;    //Disable Systick
 
+        /* application stack pointer (1st entry in the app vector table) */
         uint32_t appAddress = *(__IO uint32_t*) (APP_INT_FLASH_ADDR + 4);
+        /*app entry point (2nd entry in the app vector table*/
         pFunction pApp = (pFunction) appAddress;
 
         __set_MSP(*(__IO uint32_t*) APP_INT_FLASH_ADDR);
@@ -697,17 +684,6 @@ void BootTask(void)
 }
 
 /* Tools----------------------------------------------------------------------*/
-uint8_t SpaceCount(char *str)
-{
-  uint8_t space = 0;
-  for(uint32_t i = 0; i < strlen(str); i++)
-  {
-    if(str[i]==' ')
-      space++;
-  }
-  return space;
-}
-
 void StringArrayToBytes(char *str, uint8_t *data, uint16_t bsize)
 {
   memset(data, 0, bsize);
@@ -788,18 +764,13 @@ void LiveLedOff(void)
   HAL_GPIO_WritePin(LIVE_LED_GPIO_Port, LIVE_LED_Pin, GPIO_PIN_RESET);
 }
 
-/* printf --------------------------------------------------------------------*/
-int _write(int file, char *ptr, int len)
-{
- // HAL_UART_Transmit(&huart3, (uint8_t*)ptr, len, 100);
-  return len;
-}
-
 
 /* Flash ---------------------------------------------------------------------*/
 uint32_t FlashSectorErase(uint8_t sector)
 {
-  //If there was no flash unlock, than that is not error.
+  /*
+   * If there was no flash unlock, than that is not error.
+   */
   uint32_t sectorError = 0x0;
   FLASH_EraseInitTypeDef hEraseInit;
   hEraseInit.TypeErase = FLASH_TYPEERASE_SECTORS;
